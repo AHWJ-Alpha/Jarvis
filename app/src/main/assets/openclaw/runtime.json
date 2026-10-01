@@ -1,0 +1,6 @@
+{
+  "runtime": "openclaw",
+  "version": "pending-upstream-pin",
+  "mode": "embedded-placeholder",
+  "note": "固定 OpenClaw 上游 commit 和许可证后，将把 arm64 runtime 与源码放入此目录。"
+}

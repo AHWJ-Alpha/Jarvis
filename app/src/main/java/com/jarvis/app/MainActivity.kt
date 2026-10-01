@@ -2,6 +2,9 @@ package com.jarvis.app
 
 import android.content.Context
 import android.os.Bundle
+import com.jarvis.app.runtime.BootstrapController
+import com.jarvis.app.runtime.BootstrapReport
+import com.jarvis.app.runtime.RuntimeState
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -123,6 +126,8 @@ class MainActivity : ComponentActivity() {
 private fun JarvisApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { ConfigStore(context) }
+    val bootstrap = remember { BootstrapController(context) }
+    var bootstrapReport by remember { mutableStateOf(bootstrap.bootstrap()) }
     var config by remember { mutableStateOf(store.load()) }
     var tab by rememberSaveable { mutableStateOf(JarvisTab.Chat) }
     var draft by rememberSaveable { mutableStateOf("") }
@@ -208,6 +213,8 @@ private fun JarvisApp() {
                     JarvisTab.Settings -> SettingsScreen(
                         padding = padding,
                         config = config,
+                        bootstrapReport = bootstrapReport,
+                        onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() },
                         onRestrictionChange = { update(config.copy(restrictionMode = it)) },
                         onCommandChange = { update(config.copy(commandChannelEnabled = it)) },
                         onPrefixChange = { update(config.copy(commandPrefix = it)) },
@@ -309,9 +316,40 @@ private fun WorkspaceScreen(padding: PaddingValues) {
 }
 
 @Composable
+private fun RuntimeStatusCard(report: BootstrapReport, onRefresh: () -> Unit) {
+    val statusText = when (report.state) {
+        RuntimeState.READY -> "就绪"
+        RuntimeState.RUNNING -> "运行中"
+        RuntimeState.DEGRADED -> "兼容模式"
+        RuntimeState.NOT_CONFIGURED -> "未配置"
+        RuntimeState.ERROR -> "配置错误"
+    }
+    val statusColor = when (report.state) {
+        RuntimeState.READY, RuntimeState.RUNNING -> Color(0xFF2E7D5B)
+        RuntimeState.DEGRADED -> Color(0xFF9A6A18)
+        else -> MaterialTheme.colorScheme.error
+    }
+    SettingsCard(Icons.Default.Code, "OpenClaw 运行时", "单 APK 运行目录和插件目录状态") {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(statusText, color = statusColor, fontWeight = FontWeight.SemiBold)
+                Text(report.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            }
+            TextButton(onClick = onRefresh) { Text("重新检查") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("版本：${report.runtimeVersion}", fontSize = 12.sp)
+        Text("root：${if (report.rootAvailable) "已检测到" else "未检测到"} · Bridge Token：${if (report.bridgeTokenReady) "已生成" else "缺失"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("插件目录：${report.pluginDirectory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun SettingsScreen(
     padding: PaddingValues,
     config: JarvisConfig,
+    bootstrapReport: BootstrapReport,
+    onRefreshRuntime: () -> Unit,
     onRestrictionChange: (Boolean) -> Unit,
     onCommandChange: (Boolean) -> Unit,
     onPrefixChange: (String) -> Unit,
@@ -324,6 +362,9 @@ private fun SettingsScreen(
         Text("先配置基础策略，再逐步接入模型、QQ 和设备工具。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item {
+                RuntimeStatusCard(bootstrapReport, onRefreshRuntime)
+            }
             item {
                 SettingsCard(Icons.Default.Shield, "限制模式", "默认开启，控制高风险内容和动作") {
                     SettingSwitch("限制模式", "关闭后会持续显示警告状态", config.restrictionMode, onRestrictionChange)
