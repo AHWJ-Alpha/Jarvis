@@ -1,6 +1,12 @@
 {
   "runtime": "openclaw",
-  "version": "pending-upstream-pin",
-  "mode": "embedded-placeholder",
-  "note": "固定 OpenClaw 上游 commit 和许可证后，将把 arm64 runtime 与源码放入此目录。"
+  "version": "2026.9.7",
+  "commit": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+  "license": "MIT",
+  "repository": "https://github.com/openclaw/openclaw",
+  "node": ">=24.16.0 <25 || >=26.1.0",
+  "packageManager": "pnpm@12.5.1",
+  "mode": "embedded-source-pending-native-runtime",
+  "gateway": "127.0.0.1",
+  "note": "Jarvis pins the upstream release and starts a local Gateway when a compatible arm64 Node runtime is available. The Android client falls back to Termux when the embedded runtime is unavailable."
 }

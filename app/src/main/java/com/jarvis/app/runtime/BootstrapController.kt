@@ -27,14 +27,14 @@ class BootstrapController(private val context: Context) {
         return BootstrapReport(
             state = state,
             runtimeMode = if (runtimeMarker == null) RuntimeMode.EXTERNAL_TERMUX else RuntimeMode.EMBEDDED,
-            runtimeVersion = runtimeMarker ?: "未内置（等待固定 OpenClaw 版本）",
+            runtimeVersion = runtimeMarker ?: "未检测到兼容运行时",
             filesReady = filesReady,
             rootAvailable = rootAvailable,
             bridgeTokenReady = tokenReady,
             pluginDirectory = pluginDirectory.absolutePath,
             message = when (state) {
                 RuntimeState.READY -> "内置运行时目录已准备"
-                RuntimeState.DEGRADED -> "Jarvis 已准备插件和 Bridge，等待内置 OpenClaw Runtime"
+                RuntimeState.DEGRADED -> "已固定 OpenClaw 2026.9.7；当前设备需配置内置 Node 或 Termux 后端"
                 RuntimeState.ERROR -> "自动配置未完成，请查看日志"
                 else -> "自动配置已完成"
             }
