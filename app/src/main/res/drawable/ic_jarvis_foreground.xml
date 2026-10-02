@@ -5,14 +5,50 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- A compact J mark with a small assistant-status core. -->
+    <!-- Anime Jarvis avatar: silver-blue hair, luminous cyan eyes, and a quiet tech halo. -->
     <path
-        android:fillColor="#53D6C5"
-        android:pathData="M29,24h50v12H63v28c0,13 -8,20 -20,20 -12,0 -20,-7 -20,-20h12c0,5 2,8 8,8 6,0 8,-3 8,-8V36H29z" />
+        android:fillColor="#7BE7F2"
+        android:pathData="M18,51 C16,35 24,19 42,14 C59,8 82,17 89,35 C93,47 89,61 83,70 L73,63 L34,68 L22,75 C18,68 17,59 18,51 Z" />
     <path
-        android:fillColor="#F3FFFC"
-        android:pathData="M54,49a7,7 0,1 0,0 14a7,7 0,1 0,0 -14M54,53a3,3 0,1 1,0 6a3,3 0,1 1,0 -6" />
+        android:fillColor="#B8F6FA"
+        android:pathData="M22,42 C24,24 39,14 55,15 C72,16 83,26 86,42 C78,35 71,31 62,30 C52,28 43,31 34,38 C29,42 25,46 22,53 Z" />
     <path
-        android:fillColor="#8AF2E4"
-        android:pathData="M82,28a3,3 0,1 0,0 6a3,3 0,1 0,0 -6" />
+        android:fillColor="#FFE8E5"
+        android:pathData="M31,40 C36,34 45,31 55,31 C66,31 75,35 80,43 L77,65 C73,76 64,83 54,84 C43,83 34,76 30,65 Z" />
+    <path
+        android:fillColor="#92EAF2"
+        android:pathData="M22,40 C27,26 38,18 51,17 L42,35 L31,51 L27,69 L20,63 Z" />
+    <path
+        android:fillColor="#58C9E2"
+        android:pathData="M82,39 C78,27 68,19 57,17 L65,35 L77,52 L81,69 L88,60 Z" />
+    <path
+        android:fillColor="#4D6F9D"
+        android:pathData="M30,39 C39,31 48,28 57,29 C67,30 74,34 80,41 L76,46 C68,41 61,39 53,39 C45,39 38,42 32,48 Z" />
+    <path
+        android:fillColor="#152B4A"
+        android:pathData="M35,55 C39,51 46,51 50,55 C46,60 39,60 35,55 Z M58,55 C63,51 70,51 74,55 C70,60 63,60 58,55 Z" />
+    <path
+        android:fillColor="#8CFFFF"
+        android:pathData="M38,55 C41,53 45,53 47,55 C45,57 41,57 38,55 Z M61,55 C64,53 68,53 71,55 C68,57 64,57 61,55 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,53a2,2 0,1 0,0 4a2,2 0,1 0,0 -4 M65,53a2,2 0,1 0,0 4a2,2 0,1 0,0 -4" />
+    <path
+        android:fillColor="#E19CA8"
+        android:pathData="M39,65 C44,69 49,70 54,70 C60,70 65,68 69,65 C67,74 62,78 54,79 C46,78 41,74 39,65 Z" />
+    <path
+        android:fillColor="#FFF5F2"
+        android:pathData="M45,69 C49,71 59,71 63,69 C61,73 58,74 54,74 C50,74 47,73 45,69 Z" />
+    <path
+        android:fillColor="#7BE7F2"
+        android:pathData="M28,44 L19,51 L21,57 L31,52 Z M79,44 L89,51 L87,57 L77,52 Z" />
+    <path
+        android:fillColor="#D9FFFF"
+        android:pathData="M18,79 C31,87 76,87 90,79 L90,84 C73,94 35,94 18,84 Z" />
+    <path
+        android:fillColor="#52D6E8"
+        android:pathData="M25,84 C38,90 70,90 83,84 L80,91 C64,98 43,98 28,91 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M83,29a3,3 0,1 0,0 6a3,3 0,1 0,0 -6" />
 </vector>
