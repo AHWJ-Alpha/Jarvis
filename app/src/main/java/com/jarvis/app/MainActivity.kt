@@ -5,6 +5,18 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import com.jarvis.app.runtime.BootstrapController
 import com.jarvis.app.runtime.BootstrapReport
 import com.jarvis.app.runtime.OpenClawProcessManager
@@ -20,6 +32,7 @@ import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +42,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,6 +50,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -68,8 +84,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -100,11 +114,37 @@ import java.net.HttpURLConnection
 import java.net.URL
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+/** Gives every interactive control a short, consistent press response. */
+private fun Modifier.jarvisPressScale(): Modifier = composed {
+    val pressed = remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed.value) 0.96f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "press-scale"
+    )
+    graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }.pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            pressed.value = true
+            try {
+                waitForUpOrCancellation()
+            } finally {
+                pressed.value = false
+            }
+        }
+    }
+}
 
 private enum class JarvisTab(val label: String) { Chat("对话"), Tasks("任务"), Workspace("工作区"), Settings("设置") }
 private enum class JarvisTheme(val label: String, val primary: Color, val background: Color, val surface: Color) {
@@ -326,17 +366,18 @@ private fun JarvisApp() {
             .onFailure { error -> configNotice = "导出失败：${error.message ?: "无法写入文件"}" }
     }
 
-    MaterialTheme(colorScheme = if (config.theme == JarvisTheme.Ink) androidx.compose.material3.darkColorScheme(
-        primary = config.theme.primary,
+    Crossfade(targetState = config.theme, animationSpec = tween(300), label = "theme-transition") { activeTheme ->
+    MaterialTheme(colorScheme = if (activeTheme == JarvisTheme.Ink) androidx.compose.material3.darkColorScheme(
+        primary = activeTheme.primary,
         secondary = Color(0xFFB8D8D4),
-        background = config.theme.background,
-        surface = config.theme.surface,
+        background = activeTheme.background,
+        surface = activeTheme.surface,
         onSurface = Color(0xFFE6F1F0)
     ) else androidx.compose.material3.lightColorScheme(
-        primary = config.theme.primary,
+        primary = activeTheme.primary,
         secondary = Color(0xFFB56D3E),
-        background = config.theme.background,
-        surface = config.theme.surface,
+        background = activeTheme.background,
+        surface = activeTheme.surface,
         onSurface = Color(0xFF10212B)
     )) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -344,7 +385,7 @@ private fun JarvisApp() {
                 topBar = {
                     TopAppBar(
                         navigationIcon = {
-                            IconButton(onClick = { showNavigation = !showNavigation }) {
+                            IconButton(onClick = { showNavigation = !showNavigation }, modifier = Modifier.jarvisPressScale()) {
                                 Icon(Icons.Default.Menu, contentDescription = "打开导航")
                             }
                         },
@@ -374,11 +415,12 @@ private fun JarvisApp() {
                     Row(Modifier.fillMaxSize().padding(padding)) {
                         SessionRail(tab, workspaceName, branches, onTab = { tab = it }, onWorkspace = { workspaceName = it }, modifier = Modifier.width(280.dp))
                         VerticalDivider()
-                        Box(Modifier.weight(1f)) { MainContent(tab, padding = PaddingValues(0.dp), messages, draft, sending, onDraftChange = { draft = it }, onSend = { clean ->
+                        Box(Modifier.weight(1f)) { Crossfade(targetState = tab, animationSpec = tween(220), label = "landscape-content") { selectedTab -> MainContent(selectedTab, padding = PaddingValues(0.dp), messages, draft, sending, onDraftChange = { draft = it }, onSend = { clean ->
                             if (clean.isNotEmpty()) { messages = messages + "你：$clean"; draft = ""; sending = true; runtimeScope.launch { messages = messages + "Jarvis：${callJarvisModel(config, clean)}"; sending = false } }
-                        }, onBranch = { branches = branches + ConversationBranch("分支 ${branches.size}", messages); tab = JarvisTab.Chat }, config = config, bootstrapReport = bootstrapReport, runtimeMessage = runtimeMessage, onConfig = ::update, onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() }, onRecovery = { showRecovery = true }, onStartRuntime = { runtimeScope.launch { runtimeMessage = processManager.start().message; bootstrapReport = bootstrap.bootstrap() } }, onStopRuntime = { runtimeScope.launch { processManager.stop(); runtimeMessage = "OpenClaw Gateway 已停止"; bootstrapReport = bootstrap.bootstrap() } }, onRootModeRequest = { pendingRootMode = it; if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it)) }, configNotice = configNotice, onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") }) }
+                        }, onBranch = { branches = branches + ConversationBranch("分支 ${branches.size}", messages); tab = JarvisTab.Chat }, config = config, bootstrapReport = bootstrapReport, runtimeMessage = runtimeMessage, onConfig = ::update, onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() }, onRecovery = { showRecovery = true }, onStartRuntime = { runtimeScope.launch { runtimeMessage = processManager.start().message; bootstrapReport = bootstrap.bootstrap() } }, onStopRuntime = { runtimeScope.launch { processManager.stop(); runtimeMessage = "OpenClaw Gateway 已停止"; bootstrapReport = bootstrap.bootstrap() } }, onRootModeRequest = { pendingRootMode = it; if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it)) }, configNotice = configNotice, onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") }) } }
                     }
-                } else when (tab) {
+                } else {
+                    Crossfade(targetState = tab, animationSpec = tween(220), label = "portrait-content") { selectedTab -> when (selectedTab) {
                     JarvisTab.Chat -> ChatScreen(
                         padding = padding,
                         messages = messages,
@@ -450,12 +492,19 @@ private fun JarvisApp() {
                             if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it))
                         }
                     )
+                    }
+                }
                 }
             }
         }
     }
+    }
 
-    if (isLandscape.not() && showNavigation) {
+    AnimatedVisibility(
+        visible = isLandscape.not() && showNavigation,
+        enter = fadeIn(tween(180)) + slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = tween(260)),
+        exit = fadeOut(tween(150)) + slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(220))
+    ) {
         NavigationDrawerOverlay(tab, workspaceName, onTab = { tab = it; showNavigation = false }, onWorkspace = { workspaceName = it; showNavigation = false }, onDismiss = { showNavigation = false })
     }
 
@@ -600,13 +649,20 @@ private fun SessionRail(tab: JarvisTab, workspace: String, branches: List<Conver
         Text("Jarvis", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         Text("工作区", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        TextButton(onClick = { onWorkspace("默认工作区") }, modifier = Modifier.fillMaxWidth()) { Text(workspace, modifier = Modifier.weight(1f)) }
+        TextButton(onClick = { onWorkspace("默认工作区") }, modifier = Modifier.fillMaxWidth().jarvisPressScale()) { Text(workspace, modifier = Modifier.weight(1f)) }
         Spacer(Modifier.height(8.dp))
         Text("会话", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        JarvisTab.entries.forEach { item -> TextButton(onClick = { onTab(item) }, modifier = Modifier.fillMaxWidth()) { Icon(when (item) { JarvisTab.Chat -> Icons.Default.Chat; JarvisTab.Tasks -> Icons.Default.CheckCircle; JarvisTab.Workspace -> Icons.Default.Home; JarvisTab.Settings -> Icons.Default.Settings }, null); Spacer(Modifier.width(8.dp)); Text(item.label) } }
+        JarvisTab.entries.forEach { item -> TextButton(onClick = { onTab(item) }, modifier = Modifier.fillMaxWidth().jarvisPressScale()) { Icon(when (item) { JarvisTab.Chat -> Icons.Default.Chat; JarvisTab.Tasks -> Icons.Default.CheckCircle; JarvisTab.Workspace -> Icons.Default.Home; JarvisTab.Settings -> Icons.Default.Settings }, null); Spacer(Modifier.width(8.dp)); Text(item.label) } }
         Spacer(Modifier.height(12.dp))
         Text("分支", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        branches.forEach { Text(it.title, modifier = Modifier.padding(vertical = 6.dp), fontSize = 13.sp) }
+        branches.forEach { branch ->
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(tween(180)) + slideInHorizontally(initialOffsetX = { -it / 5 }, animationSpec = tween(220))
+            ) {
+                Text(branch.title, modifier = Modifier.padding(vertical = 6.dp), fontSize = 13.sp)
+            }
+        }
     }
 }
 
@@ -617,7 +673,7 @@ private fun VerticalDivider() { Box(Modifier.width(1.dp).fillMaxSize().backgroun
 private fun NavigationDrawerOverlay(tab: JarvisTab, workspace: String, onTab: (JarvisTab) -> Unit, onWorkspace: (String) -> Unit, onDismiss: () -> Unit) {
     Row(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f))) {
         SessionRail(tab, workspace, listOf(ConversationBranch("主对话", emptyList())), onTab, onWorkspace, Modifier.widthIn(max = 300.dp).fillMaxHeight())
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onDismiss))
     }
 }
 
@@ -682,15 +738,17 @@ private fun ChatScreen(
                 Text("对话", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("需要规划时，Jarvis 会先判断是否使用工作区。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
-            IconButton(onClick = onBranch) { Icon(Icons.Default.Add, contentDescription = "创建分支") }
+            IconButton(onClick = onBranch, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Add, contentDescription = "创建分支") }
         }
         Spacer(Modifier.height(8.dp))
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(messages) { message ->
-                val isUser = message.startsWith("你：")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
-                    Surface(color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(12.dp), tonalElevation = if (isUser) 0.dp else 1.dp, modifier = Modifier.widthIn(max = 760.dp)) {
-                        Text(message.removePrefix("你：").removePrefix("Jarvis："), modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp), color = MaterialTheme.colorScheme.onSurface)
+                AnimatedVisibility(visible = true, enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.96f, animationSpec = tween(220))) {
+                    val isUser = message.startsWith("你：")
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
+                        Surface(color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(12.dp), tonalElevation = if (isUser) 0.dp else 1.dp, modifier = Modifier.widthIn(max = 760.dp)) {
+                            Text(message.removePrefix("你：").removePrefix("Jarvis："), modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp), color = MaterialTheme.colorScheme.onSurface)
+                        }
                     }
                 }
             }
@@ -704,7 +762,7 @@ private fun ChatScreen(
                 placeholder = { Text("给 Jarvis 发消息，或描述一个任务…") },
                 maxLines = 4
             )
-            IconButton(onClick = { onSend(draft.trim()) }, enabled = !sending, modifier = Modifier.padding(start = 6.dp).size(52.dp)) {
+            IconButton(onClick = { onSend(draft.trim()) }, enabled = !sending, modifier = Modifier.padding(start = 6.dp).size(52.dp).jarvisPressScale()) {
                 Icon(Icons.Default.Send, contentDescription = "发送", tint = MaterialTheme.colorScheme.primary)
             }
         }
@@ -721,7 +779,7 @@ private fun TasksScreen(padding: PaddingValues) {
                 Text("任务", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text("挂机、自动化和后台任务会在这里显示。", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { }) { Icon(Icons.Default.Add, contentDescription = "新建任务") }
+            IconButton(onClick = { }, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Add, contentDescription = "新建任务") }
         }
         Spacer(Modifier.height(14.dp))
         EmptyState(Icons.Default.CheckCircle, "还没有任务", "先在对话中描述一个任务，Jarvis 会生成可审核的执行计划。")
@@ -731,7 +789,7 @@ private fun TasksScreen(padding: PaddingValues) {
 @Composable
 private fun WorkspaceScreen(padding: PaddingValues) {
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(18.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) { Text("工作区", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Button(onClick = { }) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("新建工作区") } }
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("工作区", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Button(onClick = { }, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("新建工作区") } }
         Text("按项目组织会话、资料与分支。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(18.dp))
         WorkspaceRow("默认工作区", "通用对话与临时任务", "3 个会话", true)
@@ -742,7 +800,7 @@ private fun WorkspaceScreen(padding: PaddingValues) {
 
 @Composable
 private fun WorkspaceRow(title: String, description: String, count: String, selected: Boolean) {
-    Surface(color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Surface(color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).animateContentSize()) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Home, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.SemiBold); Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }; Text(count, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
     }
 }
@@ -774,7 +832,7 @@ private fun RuntimeStatusCard(
                 Text(statusText, color = statusColor, fontWeight = FontWeight.SemiBold)
                 Text(report.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
-            TextButton(onClick = onRefresh) { Text("重新检查") }
+            TextButton(onClick = onRefresh, modifier = Modifier.jarvisPressScale()) { Text("重新检查") }
         }
         Spacer(Modifier.height(8.dp))
         Text("版本：${report.runtimeVersion}", fontSize = 12.sp)
@@ -786,11 +844,11 @@ private fun RuntimeStatusCard(
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onStart) { Text("启动 Gateway") }
-            OutlinedButton(onClick = onStop) { Text("停止") }
+            Button(onClick = onStart, modifier = Modifier.jarvisPressScale()) { Text("启动 Gateway") }
+            OutlinedButton(onClick = onStop, modifier = Modifier.jarvisPressScale()) { Text("停止") }
         }
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onRecovery, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = onRecovery, modifier = Modifier.fillMaxWidth().jarvisPressScale()) {
             Icon(Icons.Default.Build, contentDescription = null)
             Spacer(Modifier.width(8.dp))
             Text("运行时修复 / Termux 备用方案")
@@ -851,7 +909,7 @@ private fun SettingsScreen(
         Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Text("先配置基础策略，再逐步接入模型、QQ 和设备工具。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(modifier = Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
                 RuntimeStatusCard(bootstrapReport, onRefreshRuntime, runtimeMessage, onRecovery, onStartRuntime, onStopRuntime)
             }
@@ -867,6 +925,7 @@ private fun SettingsScreen(
                             FilterChip(
                                 selected = config.rootMode == mode,
                                 onClick = { onRootModeRequest(mode) },
+                                modifier = Modifier.jarvisPressScale(),
                                 label = { Text(mode.label) }
                             )
                         }
@@ -878,7 +937,7 @@ private fun SettingsScreen(
             item {
                 SettingsCard(Icons.Default.Terminal, "QQ 命令通道", "指定会话可发送 /claw 命令，其余消息走普通人格") {
                     SettingSwitch("启用命令通道", "首版默认只做预览，不直接执行", config.commandChannelEnabled, onCommandChange)
-                    if (config.commandChannelEnabled) {
+                    AnimatedVisibility(visible = config.commandChannelEnabled, enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.98f, animationSpec = tween(180)), exit = fadeOut(tween(120))) {
                         OutlinedTextField(
                             value = config.commandPrefix,
                             onValueChange = onPrefixChange,
@@ -942,6 +1001,7 @@ private fun SettingsScreen(
                                     FilterChip(
                                         selected = normalizeReasoningEffort(config.reasoningEffort) == effort,
                                         onClick = { onReasoningEffortChange(effort) },
+                                        modifier = Modifier.jarvisPressScale(),
                                         label = { Text(effort) }
                                     )
                                 }
@@ -995,8 +1055,8 @@ private fun SettingsScreen(
             item {
                 SettingsCard(Icons.Default.Extension, "AI Classroom 配置同步", "导入课堂配置文件，或导出 Jarvis 可再次导入的兼容 JSON") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onImportAiClassroom, modifier = Modifier.weight(1f)) { Text("导入") }
-                        OutlinedButton(onClick = onExportAiClassroom, modifier = Modifier.weight(1f)) { Text("导出") }
+                        Button(onClick = onImportAiClassroom, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("导入") }
+                        OutlinedButton(onClick = onExportAiClassroom, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("导出") }
                     }
                     if (configNotice.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
@@ -1029,7 +1089,7 @@ private fun SettingsScreen(
                 SettingsCard(Icons.Default.Tune, "风格与外观", "切换界面色调；人格风格仍由提示词和工作区控制") {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         JarvisTheme.entries.forEach { theme ->
-                            FilterChip(selected = config.theme == theme, onClick = { onThemeChange(theme) }, label = { Text(theme.label) })
+                            FilterChip(selected = config.theme == theme, onClick = { onThemeChange(theme) }, modifier = Modifier.jarvisPressScale(), label = { Text(theme.label) })
                         }
                     }
                 }
@@ -1038,7 +1098,7 @@ private fun SettingsScreen(
                 SettingsCard(Icons.Default.Extension, "基础插件", "检查内置运行时、系统/root 和 Termux 中的工具") {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text("工具状态", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { refreshTools(); toolNotice = "正在检查工具路径" }, enabled = !checkingTools) { Text("刷新") }
+                        TextButton(onClick = { refreshTools(); toolNotice = "正在检查工具路径" }, enabled = !checkingTools, modifier = Modifier.jarvisPressScale()) { Text("刷新") }
                     }
                     if (checkingTools && toolStatuses.isEmpty()) {
                         Text("正在检查内置运行时、系统/root 和 Termux…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
@@ -1073,7 +1133,7 @@ private fun PluginToolRow(status: RuntimeToolStatus, onInstall: () -> Unit) {
             Text(status.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (status.source == ToolSource.MISSING) {
-            TextButton(onClick = onInstall) { Text("安装") }
+            TextButton(onClick = onInstall, modifier = Modifier.jarvisPressScale()) { Text("安装") }
         } else {
             Text(status.source.label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -1099,18 +1159,18 @@ private fun RuntimeRecoveryDialog(
         },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
-                Button(onClick = onTermux) { Text("使用 Termux 备用方案") }
+                Button(onClick = onTermux, modifier = Modifier.jarvisPressScale()) { Text("使用 Termux 备用方案") }
                 Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onReinstall) { Text("修复内置运行时并保留数据") }
+                TextButton(onClick = onReinstall, modifier = Modifier.jarvisPressScale()) { Text("修复内置运行时并保留数据") }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.jarvisPressScale()) { Text("取消") } }
     )
 }
 
 @Composable
 private fun SettingsCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, content: @Composable () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -1133,13 +1193,13 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onC
             Text(title)
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, modifier = Modifier.jarvisPressScale())
     }
 }
 
 @Composable
 private fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().animateContentSize()) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(28.dp)) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(10.dp))
@@ -1170,8 +1230,8 @@ private fun RootWarningDialog(onCancel: () -> Unit, onConfirm: () -> Unit) {
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm, enabled = seconds == 0) { Text("确认启用") }
+            Button(onClick = onConfirm, enabled = seconds == 0, modifier = Modifier.jarvisPressScale()) { Text("确认启用") }
         },
-        dismissButton = { TextButton(onClick = onCancel) { Text("取消") } }
+        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.jarvisPressScale()) { Text("取消") } }
     )
 }
