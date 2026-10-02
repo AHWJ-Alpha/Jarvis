@@ -12,6 +12,9 @@ import com.jarvis.app.runtime.RuntimeState
 import com.jarvis.app.runtime.RuntimeRecoveryManager
 import com.jarvis.app.runtime.JarvisBridgeServer
 import com.jarvis.app.runtime.JarvisBridgeService
+import com.jarvis.app.runtime.RuntimeToolManager
+import com.jarvis.app.runtime.RuntimeToolStatus
+import com.jarvis.app.runtime.ToolSource
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
@@ -30,6 +33,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +49,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Send
@@ -49,6 +56,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -69,12 +79,15 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,9 +106,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private enum class JarvisTab(val label: String) {
-    Chat("对话"), Tasks("任务"), Workspace("工作区"), Settings("设置")
+private enum class JarvisTab(val label: String) { Chat("对话"), Tasks("任务"), Workspace("工作区"), Settings("设置") }
+private enum class JarvisTheme(val label: String, val primary: Color, val background: Color, val surface: Color) {
+    Deep("深海", Color(0xFF176B87), Color(0xFFF4F7F6), Color.White),
+    Graphite("石墨", Color(0xFF46515C), Color(0xFFF2F4F6), Color.White),
+    Forest("松林", Color(0xFF2E6B55), Color(0xFFF2F7F3), Color.White),
+    Ink("墨黑", Color(0xFFB8D8D4), Color(0xFF101519), Color(0xFF1B2428))
 }
+
+private data class ConversationBranch(val title: String, val messages: List<String>)
 
 private enum class RootMode(val label: String) {
     Off("关闭"), Standard("标准"), Full("完全")
@@ -123,7 +142,8 @@ private data class JarvisConfig(
     val visionApiKey: String = "",
     val visionModel: String = "",
     val mentorPrompt: String = "",
-    val worldBook: String = ""
+    val worldBook: String = "",
+    val theme: JarvisTheme = JarvisTheme.Deep
 )
 
 private class ConfigStore(context: Context) {
@@ -145,7 +165,8 @@ private class ConfigStore(context: Context) {
         visionApiKey = prefs.getString("visionApiKey", "") ?: "",
         visionModel = prefs.getString("visionModel", "") ?: "",
         mentorPrompt = prefs.getString("mentorPrompt", "") ?: "",
-        worldBook = prefs.getString("worldBook", "") ?: ""
+        worldBook = prefs.getString("worldBook", "") ?: "",
+        theme = JarvisTheme.entries.getOrElse(prefs.getInt("theme", 0)) { JarvisTheme.Deep }
     )
 
     fun save(config: JarvisConfig) {
@@ -167,6 +188,7 @@ private class ConfigStore(context: Context) {
             .putString("visionModel", config.visionModel)
             .putString("mentorPrompt", config.mentorPrompt)
             .putString("worldBook", config.worldBook)
+            .putInt("theme", config.theme.ordinal)
             .apply()
     }
 }
@@ -261,6 +283,10 @@ private fun JarvisApp() {
     var showRecovery by remember { mutableStateOf(false) }
     var configNotice by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var showNavigation by rememberSaveable { mutableStateOf(false) }
+    var workspaceName by rememberSaveable { mutableStateOf("默认工作区") }
+    var branches by remember { mutableStateOf(listOf(ConversationBranch("主对话", messages))) }
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     fun update(next: JarvisConfig) {
         config = next
@@ -300,22 +326,33 @@ private fun JarvisApp() {
             .onFailure { error -> configNotice = "导出失败：${error.message ?: "无法写入文件"}" }
     }
 
-    MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(
-        primary = Color(0xFF176B87),
+    MaterialTheme(colorScheme = if (config.theme == JarvisTheme.Ink) androidx.compose.material3.darkColorScheme(
+        primary = config.theme.primary,
+        secondary = Color(0xFFB8D8D4),
+        background = config.theme.background,
+        surface = config.theme.surface,
+        onSurface = Color(0xFFE6F1F0)
+    ) else androidx.compose.material3.lightColorScheme(
+        primary = config.theme.primary,
         secondary = Color(0xFFB56D3E),
-        background = Color(0xFFF4F7F6),
-        surface = Color.White,
+        background = config.theme.background,
+        surface = config.theme.surface,
         onSurface = Color(0xFF10212B)
     )) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
                     TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = { showNavigation = !showNavigation }) {
+                                Icon(Icons.Default.Menu, contentDescription = "打开导航")
+                            }
+                        },
                         title = {
                             Column {
-                                Text("Jarvis", fontWeight = FontWeight.SemiBold)
+                                Text(workspaceName, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    text = if (config.rootMode == RootMode.Full) "完全模式" else "本地代理工作台",
+                                    text = "Jarvis · ${if (config.rootMode == RootMode.Full) "完全模式" else "个人助理"}",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -331,30 +368,17 @@ private fun JarvisApp() {
                         }
                     )
                 },
-                bottomBar = {
-                    NavigationBar(modifier = Modifier.navigationBarsPadding()) {
-                        JarvisTab.entries.forEach { item ->
-                            NavigationBarItem(
-                                selected = tab == item,
-                                onClick = { tab = item },
-                                icon = {
-                                    Icon(
-                                        imageVector = when (item) {
-                                            JarvisTab.Chat -> Icons.Default.Chat
-                                            JarvisTab.Tasks -> Icons.Default.CheckCircle
-                                            JarvisTab.Workspace -> Icons.Default.Home
-                                            JarvisTab.Settings -> Icons.Default.Settings
-                                        },
-                                        contentDescription = item.label
-                                    )
-                                },
-                                label = { Text(item.label) }
-                            )
-                        }
-                    }
-                }
+                bottomBar = {}
             ) { padding ->
-                when (tab) {
+                if (isLandscape) {
+                    Row(Modifier.fillMaxSize().padding(padding)) {
+                        SessionRail(tab, workspaceName, branches, onTab = { tab = it }, onWorkspace = { workspaceName = it }, modifier = Modifier.width(280.dp))
+                        VerticalDivider()
+                        Box(Modifier.weight(1f)) { MainContent(tab, padding = PaddingValues(0.dp), messages, draft, sending, onDraftChange = { draft = it }, onSend = { clean ->
+                            if (clean.isNotEmpty()) { messages = messages + "你：$clean"; draft = ""; sending = true; runtimeScope.launch { messages = messages + "Jarvis：${callJarvisModel(config, clean)}"; sending = false } }
+                        }, onBranch = { branches = branches + ConversationBranch("分支 ${branches.size}", messages); tab = JarvisTab.Chat }, config = config, bootstrapReport = bootstrapReport, runtimeMessage = runtimeMessage, onConfig = ::update, onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() }, onRecovery = { showRecovery = true }, onStartRuntime = { runtimeScope.launch { runtimeMessage = processManager.start().message; bootstrapReport = bootstrap.bootstrap() } }, onStopRuntime = { runtimeScope.launch { processManager.stop(); runtimeMessage = "OpenClaw Gateway 已停止"; bootstrapReport = bootstrap.bootstrap() } }, onRootModeRequest = { pendingRootMode = it; if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it)) }, configNotice = configNotice, onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") }) }
+                    }
+                } else when (tab) {
                     JarvisTab.Chat -> ChatScreen(
                         padding = padding,
                         messages = messages,
@@ -417,6 +441,7 @@ private fun JarvisApp() {
                         onVisionModelChange = { update(config.copy(visionModel = it)) },
                         onMentorPromptChange = { update(config.copy(mentorPrompt = it)) },
                         onWorldBookChange = { update(config.copy(worldBook = it)) },
+                        onThemeChange = { update(config.copy(theme = it)) },
                         configNotice = configNotice,
                         onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                         onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") },
@@ -428,6 +453,10 @@ private fun JarvisApp() {
                 }
             }
         }
+    }
+
+    if (isLandscape.not() && showNavigation) {
+        NavigationDrawerOverlay(tab, workspaceName, onTab = { tab = it; showNavigation = false }, onWorkspace = { workspaceName = it; showNavigation = false }, onDismiss = { showNavigation = false })
     }
 
     if (showRootWarning && pendingRootMode == RootMode.Full) {
@@ -517,6 +546,81 @@ private suspend fun callVisionModel(config: JarvisConfig, prompt: String, dataUr
     )
 }
 
+@Composable
+private fun MainContent(
+    tab: JarvisTab,
+    padding: PaddingValues,
+    messages: List<String>,
+    draft: String,
+    sending: Boolean,
+    onDraftChange: (String) -> Unit,
+    onSend: (String) -> Unit,
+    onBranch: () -> Unit,
+    config: JarvisConfig,
+    bootstrapReport: BootstrapReport,
+    runtimeMessage: String,
+    onConfig: (JarvisConfig) -> Unit,
+    onRefreshRuntime: () -> Unit,
+    onRecovery: () -> Unit,
+    onStartRuntime: () -> Unit,
+    onStopRuntime: () -> Unit,
+    onRootModeRequest: (RootMode) -> Unit,
+    configNotice: String,
+    onImportAiClassroom: () -> Unit,
+    onExportAiClassroom: () -> Unit
+) {
+    when (tab) {
+        JarvisTab.Chat -> ChatScreen(padding, messages, draft, onDraftChange, sending, onSend, onBranch)
+        JarvisTab.Tasks -> TasksScreen(padding)
+        JarvisTab.Workspace -> WorkspaceScreen(padding)
+        JarvisTab.Settings -> SettingsScreen(
+            padding, config, bootstrapReport, onRefreshRuntime, runtimeMessage, onRecovery,
+            onStartRuntime, onStopRuntime,
+            { onConfig(config.copy(restrictionMode = it)) },
+            { onConfig(config.copy(commandChannelEnabled = it)) },
+            { onConfig(config.copy(commandPrefix = it)) },
+            { onConfig(config.copy(modelBaseUrl = it)) },
+            { onConfig(config.copy(modelName = it)) },
+            { onConfig(config.copy(modelApiKey = it)) },
+            { onConfig(config.copy(modelChain = it)) },
+            { enabled -> onConfig(config.copy(deepThinkingEnabled = enabled, reasoningEffort = if (enabled && config.reasoningEffort == "off") "medium" else if (!enabled) "off" else config.reasoningEffort)) },
+            { effort -> onConfig(config.copy(reasoningEffort = normalizeReasoningEffort(effort), deepThinkingEnabled = normalizeReasoningEffort(effort) != "off")) },
+            { onConfig(config.copy(deepThinkingModel = it)) }, { onConfig(config.copy(visionBaseUrl = it)) },
+            { onConfig(config.copy(visionApiKey = it)) }, { onConfig(config.copy(visionModel = it)) },
+            { onConfig(config.copy(mentorPrompt = it)) }, { onConfig(config.copy(worldBook = it)) },
+            { onConfig(config.copy(theme = it)) },
+            configNotice, onImportAiClassroom, onExportAiClassroom, onRootModeRequest
+        )
+    }
+}
+
+@Composable
+private fun SessionRail(tab: JarvisTab, workspace: String, branches: List<ConversationBranch>, onTab: (JarvisTab) -> Unit, onWorkspace: (String) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(14.dp)) {
+        Text("Jarvis", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(16.dp))
+        Text("工作区", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        TextButton(onClick = { onWorkspace("默认工作区") }, modifier = Modifier.fillMaxWidth()) { Text(workspace, modifier = Modifier.weight(1f)) }
+        Spacer(Modifier.height(8.dp))
+        Text("会话", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        JarvisTab.entries.forEach { item -> TextButton(onClick = { onTab(item) }, modifier = Modifier.fillMaxWidth()) { Icon(when (item) { JarvisTab.Chat -> Icons.Default.Chat; JarvisTab.Tasks -> Icons.Default.CheckCircle; JarvisTab.Workspace -> Icons.Default.Home; JarvisTab.Settings -> Icons.Default.Settings }, null); Spacer(Modifier.width(8.dp)); Text(item.label) } }
+        Spacer(Modifier.height(12.dp))
+        Text("分支", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        branches.forEach { Text(it.title, modifier = Modifier.padding(vertical = 6.dp), fontSize = 13.sp) }
+    }
+}
+
+@Composable
+private fun VerticalDivider() { Box(Modifier.width(1.dp).fillMaxSize().background(MaterialTheme.colorScheme.outlineVariant)) }
+
+@Composable
+private fun NavigationDrawerOverlay(tab: JarvisTab, workspace: String, onTab: (JarvisTab) -> Unit, onWorkspace: (String) -> Unit, onDismiss: () -> Unit) {
+    Row(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f))) {
+        SessionRail(tab, workspace, listOf(ConversationBranch("主对话", emptyList())), onTab, onWorkspace, Modifier.widthIn(max = 300.dp).fillMaxHeight())
+        Spacer(Modifier.weight(1f))
+    }
+}
+
 private fun requestChatCompletion(
     baseUrl: String,
     apiKey: String,
@@ -569,33 +673,41 @@ private fun ChatScreen(
     draft: String,
     onDraftChange: (String) -> Unit,
     sending: Boolean,
-    onSend: (String) -> Unit
+    onSend: (String) -> Unit,
+    onBranch: () -> Unit = {}
 ) {
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-        Text("主对话", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("自然语言入口。Jarvis 会在需要时生成计划并请求工具权限。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(14.dp))
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("对话", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("需要规划时，Jarvis 会先判断是否使用工作区。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+            IconButton(onClick = onBranch) { Icon(Icons.Default.Add, contentDescription = "创建分支") }
+        }
+        Spacer(Modifier.height(8.dp))
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(messages) { message ->
                 val isUser = message.startsWith("你：")
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = if (isUser) Color(0xFFE1F0F1) else Color.White),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(message, modifier = Modifier.padding(14.dp)) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
+                    Surface(color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(12.dp), tonalElevation = if (isUser) 0.dp else 1.dp, modifier = Modifier.widthIn(max = 760.dp)) {
+                        Text(message.removePrefix("你：").removePrefix("Jarvis："), modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp), color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
             }
         }
-        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(vertical = 12.dp)) {
+        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(18.dp), tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             OutlinedTextField(
                 value = draft,
                 onValueChange = onDraftChange,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("描述你想让 Jarvis 完成的任务") },
+                placeholder = { Text("给 Jarvis 发消息，或描述一个任务…") },
                 maxLines = 4
             )
             IconButton(onClick = { onSend(draft.trim()) }, enabled = !sending, modifier = Modifier.padding(start = 6.dp).size(52.dp)) {
                 Icon(Icons.Default.Send, contentDescription = "发送", tint = MaterialTheme.colorScheme.primary)
             }
+        }
         }
         if (sending) Text("正在请求模型…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
@@ -618,22 +730,20 @@ private fun TasksScreen(padding: PaddingValues) {
 
 @Composable
 private fun WorkspaceScreen(padding: PaddingValues) {
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-        Text("工作区", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("每个工作区可以覆盖全局人格、世界书、示例和模型配置。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
-        Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("默认工作区", fontWeight = FontWeight.SemiBold)
-                Text("继承全局配置", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(onClick = { }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Extension, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("管理人格与世界书")
-                }
-            }
-        }
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { Text("工作区", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Button(onClick = { }) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("新建工作区") } }
+        Text("按项目组织会话、资料与分支。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(18.dp))
+        WorkspaceRow("默认工作区", "通用对话与临时任务", "3 个会话", true)
+        WorkspaceRow("OpenClaw 集成", "运行时、插件和设备桥接", "5 个会话", false)
+        WorkspaceRow("AI 配置", "模型、人格与世界书", "2 个会话", false)
+    }
+}
+
+@Composable
+private fun WorkspaceRow(title: String, description: String, count: String, selected: Boolean) {
+    Surface(color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Home, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.SemiBold); Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }; Text(count, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp) }
     }
 }
 
@@ -713,11 +823,30 @@ private fun SettingsScreen(
     onVisionModelChange: (String) -> Unit,
     onMentorPromptChange: (String) -> Unit,
     onWorldBookChange: (String) -> Unit,
+    onThemeChange: (JarvisTheme) -> Unit,
     configNotice: String,
     onImportAiClassroom: () -> Unit,
     onExportAiClassroom: () -> Unit,
     onRootModeRequest: (RootMode) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val toolManager = remember { RuntimeToolManager(context) }
+    val toolScope = rememberCoroutineScope()
+    var toolStatuses by remember { mutableStateOf<List<RuntimeToolStatus>>(emptyList()) }
+    var checkingTools by remember { mutableStateOf(true) }
+    var toolNotice by remember { mutableStateOf("") }
+
+    fun refreshTools() {
+        checkingTools = true
+        toolScope.launch {
+            val result = withContext(Dispatchers.IO) { toolManager.inspect() }
+            toolStatuses = result
+            checkingTools = false
+        }
+    }
+
+    LaunchedEffect(Unit) { refreshTools() }
+
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
         Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Text("先配置基础策略，再逐步接入模型、QQ 和设备工具。", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -896,6 +1025,57 @@ private fun SettingsScreen(
                     )
                 }
             }
+            item {
+                SettingsCard(Icons.Default.Tune, "风格与外观", "切换界面色调；人格风格仍由提示词和工作区控制") {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        JarvisTheme.entries.forEach { theme ->
+                            FilterChip(selected = config.theme == theme, onClick = { onThemeChange(theme) }, label = { Text(theme.label) })
+                        }
+                    }
+                }
+            }
+            item {
+                SettingsCard(Icons.Default.Extension, "基础插件", "检查内置运行时、系统/root 和 Termux 中的工具") {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text("工具状态", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { refreshTools(); toolNotice = "正在检查工具路径" }, enabled = !checkingTools) { Text("刷新") }
+                    }
+                    if (checkingTools && toolStatuses.isEmpty()) {
+                        Text("正在检查内置运行时、系统/root 和 Termux…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    } else {
+                        toolStatuses.forEach { status ->
+                            PluginToolRow(status) {
+                                val result = toolManager.install(status)
+                                toolNotice = result.message
+                                if (result.success) refreshTools()
+                            }
+                        }
+                    }
+                    if (toolNotice.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(toolNotice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text("Rust、Python 和 Git 体积较大，缺少时通过 Termux 按需安装；Jarvis 不会把未经校验的二进制直接写入系统目录。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PluginToolRow(status: RuntimeToolStatus, onInstall: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+        Icon(Icons.Default.Extension, null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(status.label, fontWeight = FontWeight.SemiBold)
+            Text(status.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (status.source == ToolSource.MISSING) {
+            TextButton(onClick = onInstall) { Text("安装") }
+        } else {
+            Text(status.source.label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
