@@ -1,10 +1,19 @@
 package com.jarvis.app
 
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.jarvis.app.runtime.BootstrapController
 import com.jarvis.app.runtime.BootstrapReport
+import com.jarvis.app.runtime.OpenClawProcessManager
 import com.jarvis.app.runtime.RuntimeState
+import com.jarvis.app.runtime.RuntimeRecoveryManager
+import com.jarvis.app.runtime.JarvisBridgeServer
+import com.jarvis.app.runtime.JarvisBridgeService
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -61,10 +70,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -81,13 +101,29 @@ private enum class RootMode(val label: String) {
     Off("关闭"), Standard("标准"), Full("完全")
 }
 
+private val reasoningEfforts = listOf("off", "minimal", "low", "medium", "high", "max")
+
+private fun normalizeReasoningEffort(value: String): String = value.lowercase().trim().let {
+    if (it in reasoningEfforts) it else "off"
+}
+
 private data class JarvisConfig(
     val restrictionMode: Boolean = true,
     val rootMode: RootMode = RootMode.Standard,
     val commandChannelEnabled: Boolean = false,
     val commandPrefix: String = "/claw",
     val modelBaseUrl: String = "",
-    val modelName: String = ""
+    val modelApiKey: String = "",
+    val modelName: String = "",
+    val modelChain: String = "",
+    val deepThinkingEnabled: Boolean = false,
+    val reasoningEffort: String = "off",
+    val deepThinkingModel: String = "",
+    val visionBaseUrl: String = "",
+    val visionApiKey: String = "",
+    val visionModel: String = "",
+    val mentorPrompt: String = "",
+    val worldBook: String = ""
 )
 
 private class ConfigStore(context: Context) {
@@ -99,24 +135,108 @@ private class ConfigStore(context: Context) {
         commandChannelEnabled = prefs.getBoolean("commandChannelEnabled", false),
         commandPrefix = prefs.getString("commandPrefix", "/claw") ?: "/claw",
         modelBaseUrl = prefs.getString("modelBaseUrl", "") ?: "",
-        modelName = prefs.getString("modelName", "") ?: ""
+        modelApiKey = prefs.getString("modelApiKey", "") ?: "",
+        modelName = prefs.getString("modelName", "") ?: "",
+        modelChain = prefs.getString("modelChain", "") ?: "",
+        deepThinkingEnabled = prefs.getBoolean("deepThinkingEnabled", false),
+        reasoningEffort = normalizeReasoningEffort(prefs.getString("reasoningEffort", "off") ?: "off"),
+        deepThinkingModel = prefs.getString("deepThinkingModel", "") ?: "",
+        visionBaseUrl = prefs.getString("visionBaseUrl", "") ?: "",
+        visionApiKey = prefs.getString("visionApiKey", "") ?: "",
+        visionModel = prefs.getString("visionModel", "") ?: "",
+        mentorPrompt = prefs.getString("mentorPrompt", "") ?: "",
+        worldBook = prefs.getString("worldBook", "") ?: ""
     )
 
     fun save(config: JarvisConfig) {
+        val effort = normalizeReasoningEffort(config.reasoningEffort)
         prefs.edit()
             .putBoolean("restrictionMode", config.restrictionMode)
             .putInt("rootMode", config.rootMode.ordinal)
             .putBoolean("commandChannelEnabled", config.commandChannelEnabled)
             .putString("commandPrefix", config.commandPrefix)
             .putString("modelBaseUrl", config.modelBaseUrl)
+            .putString("modelApiKey", config.modelApiKey)
             .putString("modelName", config.modelName)
+            .putString("modelChain", config.modelChain)
+            .putBoolean("deepThinkingEnabled", config.deepThinkingEnabled && effort != "off")
+            .putString("reasoningEffort", effort)
+            .putString("deepThinkingModel", config.deepThinkingModel)
+            .putString("visionBaseUrl", config.visionBaseUrl)
+            .putString("visionApiKey", config.visionApiKey)
+            .putString("visionModel", config.visionModel)
+            .putString("mentorPrompt", config.mentorPrompt)
+            .putString("worldBook", config.worldBook)
             .apply()
     }
+}
+
+private fun JarvisConfig.toAiClassroomJson(): JSONObject = JSONObject().apply {
+    put("version", 1)
+    put("source", "jarvis")
+    put("config", JSONObject().apply {
+        put("provider", "OpenAI-compatible")
+        put("apiKey", modelApiKey)
+        put("baseUrl", modelBaseUrl)
+        put("selectedModel", modelName)
+        put("customModel", modelName)
+        put("modelChain", modelChain.ifBlank { modelName })
+        put("deepThinkingEnabled", deepThinkingEnabled && normalizeReasoningEffort(reasoningEffort) != "off")
+        put("deepThinkingModel", deepThinkingModel)
+        put("reasoningEffort", normalizeReasoningEffort(reasoningEffort))
+        put("visionProvider", "OpenAI-compatible")
+        put("visionApiKey", visionApiKey)
+        put("visionBaseUrl", visionBaseUrl)
+        put("visionModel", visionModel)
+        put("mentorPrompt", mentorPrompt)
+        put("worldBook", worldBook)
+    })
+}
+
+private fun JSONObject.toJarvisConfig(current: JarvisConfig): JarvisConfig {
+    val source = optJSONObject("config") ?: this
+    val effort = normalizeReasoningEffort(source.optString("reasoningEffort", current.reasoningEffort))
+    val deepEnabled = source.optBoolean("deepThinkingEnabled", current.deepThinkingEnabled) && effort != "off"
+    val mainKey = source.optString("apiKey", current.modelApiKey)
+    val mainBase = source.optString("baseUrl", current.modelBaseUrl)
+    val mainModel = source.optString("selectedModel")
+        .ifBlank { source.optString("customModel") }
+        .ifBlank { current.modelName }
+    return current.copy(
+        modelBaseUrl = mainBase,
+        modelApiKey = mainKey,
+        modelName = mainModel,
+        modelChain = source.optString("modelChain", current.modelChain),
+        deepThinkingEnabled = deepEnabled,
+        reasoningEffort = if (deepEnabled) effort else "off",
+        deepThinkingModel = source.optString("deepThinkingModel", current.deepThinkingModel),
+        visionBaseUrl = source.optString("visionBaseUrl", mainBase),
+        visionApiKey = source.optString("visionApiKey", mainKey),
+        visionModel = source.optString("visionModel", current.visionModel.ifBlank { mainModel }),
+        mentorPrompt = source.optString("mentorPrompt", current.mentorPrompt),
+        worldBook = source.optString("worldBook", current.worldBook)
+    )
+}
+
+private fun parseAiClassroomConfig(raw: String, current: JarvisConfig): JarvisConfig {
+    val trimmed = raw.trim()
+    if (trimmed.startsWith("[")) {
+        val classes = JSONArray(trimmed)
+        for (index in 0 until classes.length()) {
+            val candidate = classes.optJSONObject(index)?.optJSONObject("config") ?: continue
+            return candidate.toJarvisConfig(current)
+        }
+        error("未找到课堂配置")
+    }
+    return JSONObject(trimmed).toJarvisConfig(current)
 }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        BootstrapController(this).bootstrap()
+        val bridgeIntent = Intent(this, JarvisBridgeService::class.java)
+        ContextCompat.startForegroundService(this, bridgeIntent)
         setContent { JarvisApp() }
     }
 }
@@ -127,17 +247,57 @@ private fun JarvisApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { ConfigStore(context) }
     val bootstrap = remember { BootstrapController(context) }
+    val processManager = remember { OpenClawProcessManager(context) }
+    val recoveryManager = remember { RuntimeRecoveryManager(context) }
+    val runtimeScope = rememberCoroutineScope()
     var bootstrapReport by remember { mutableStateOf(bootstrap.bootstrap()) }
+    var runtimeMessage by remember { mutableStateOf("") }
     var config by remember { mutableStateOf(store.load()) }
     var tab by rememberSaveable { mutableStateOf(JarvisTab.Chat) }
     var draft by rememberSaveable { mutableStateOf("") }
     var messages by remember { mutableStateOf(listOf("Jarvis 已启动。你可以从这里开始描述任务。")) }
     var showRootWarning by remember { mutableStateOf(false) }
     var pendingRootMode by remember { mutableStateOf<RootMode?>(null) }
+    var showRecovery by remember { mutableStateOf(false) }
+    var configNotice by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
 
     fun update(next: JarvisConfig) {
         config = next
         store.save(next)
+    }
+
+    val importConfigLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runtimeScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("无法读取文件")
+                }
+            }
+            result.onSuccess { raw ->
+                runCatching { parseAiClassroomConfig(raw, config) }
+                    .onSuccess { imported ->
+                        update(imported)
+                        configNotice = "已同步 AI Classroom 配置"
+                    }
+                    .onFailure { error -> configNotice = "导入失败：${error.message ?: "配置格式无效"}" }
+            }.onFailure { error -> configNotice = "读取失败：${error.message ?: "无法访问文件"}" }
+        }
+    }
+    val exportConfigLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                it.write(config.toAiClassroomJson().toString(2))
+            } ?: error("无法写入文件")
+        }.onSuccess { configNotice = "已导出 AI Classroom 兼容配置" }
+            .onFailure { error -> configNotice = "导出失败：${error.message ?: "无法写入文件"}" }
     }
 
     MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(
@@ -200,11 +360,17 @@ private fun JarvisApp() {
                         messages = messages,
                         draft = draft,
                         onDraftChange = { draft = it },
-                        onSend = {
-                            val clean = draft.trim()
+                        sending = sending,
+                        onSend = { clean ->
                             if (clean.isNotEmpty()) {
-                                messages = messages + "你：$clean" + "Jarvis：已收到。工具执行和模型连接将在下一步接入。"
+                                messages = messages + "你：$clean"
                                 draft = ""
+                                sending = true
+                                runtimeScope.launch {
+                                    val reply = callJarvisModel(config, clean)
+                                    messages = messages + "Jarvis：$reply"
+                                    sending = false
+                                }
                             }
                         }
                     )
@@ -215,11 +381,45 @@ private fun JarvisApp() {
                         config = config,
                         bootstrapReport = bootstrapReport,
                         onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() },
+                        runtimeMessage = runtimeMessage,
+                        onRecovery = { showRecovery = true },
+                        onStartRuntime = {
+                            runtimeScope.launch {
+                                runtimeMessage = processManager.start().message
+                                bootstrapReport = bootstrap.bootstrap()
+                            }
+                        },
+                        onStopRuntime = {
+                            runtimeScope.launch {
+                                processManager.stop()
+                                runtimeMessage = "OpenClaw Gateway 已停止"
+                                bootstrapReport = bootstrap.bootstrap()
+                            }
+                        },
                         onRestrictionChange = { update(config.copy(restrictionMode = it)) },
                         onCommandChange = { update(config.copy(commandChannelEnabled = it)) },
                         onPrefixChange = { update(config.copy(commandPrefix = it)) },
                         onModelBaseUrlChange = { update(config.copy(modelBaseUrl = it)) },
                         onModelNameChange = { update(config.copy(modelName = it)) },
+                        onModelApiKeyChange = { update(config.copy(modelApiKey = it)) },
+                        onModelChainChange = { update(config.copy(modelChain = it)) },
+                        onDeepThinkingChange = { enabled ->
+                            val effort = if (enabled && config.reasoningEffort == "off") "medium" else if (!enabled) "off" else config.reasoningEffort
+                            update(config.copy(deepThinkingEnabled = enabled, reasoningEffort = effort))
+                        },
+                        onReasoningEffortChange = { effort ->
+                            val normalized = normalizeReasoningEffort(effort)
+                            update(config.copy(reasoningEffort = normalized, deepThinkingEnabled = normalized != "off"))
+                        },
+                        onDeepThinkingModelChange = { update(config.copy(deepThinkingModel = it)) },
+                        onVisionBaseUrlChange = { update(config.copy(visionBaseUrl = it)) },
+                        onVisionApiKeyChange = { update(config.copy(visionApiKey = it)) },
+                        onVisionModelChange = { update(config.copy(visionModel = it)) },
+                        onMentorPromptChange = { update(config.copy(mentorPrompt = it)) },
+                        onWorldBookChange = { update(config.copy(worldBook = it)) },
+                        configNotice = configNotice,
+                        onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                        onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") },
                         onRootModeRequest = {
                             pendingRootMode = it
                             if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it))
@@ -240,6 +440,126 @@ private fun JarvisApp() {
             }
         )
     }
+
+    if (showRecovery) {
+        RuntimeRecoveryDialog(
+            onDismiss = { showRecovery = false },
+            onReinstall = {
+                val result = recoveryManager.reinstallEmbeddedPreservingData()
+                runtimeMessage = result.message
+                bootstrapReport = bootstrap.bootstrap()
+                showRecovery = false
+            },
+            onTermux = {
+                val result = recoveryManager.launchTermuxSetup()
+                runtimeMessage = result.message
+                showRecovery = false
+            }
+        )
+    }
+}
+
+private suspend fun callJarvisModel(config: JarvisConfig, prompt: String): String = withContext(Dispatchers.IO) {
+    val baseUrl = config.modelBaseUrl.trim()
+    val models = (listOfNotNull(
+        config.deepThinkingModel.takeIf { config.deepThinkingEnabled && normalizeReasoningEffort(config.reasoningEffort) != "off" },
+        config.modelName
+    ) + config.modelChain.split(',', '\n', '，', '；', ';'))
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+    if (baseUrl.isBlank() || models.isEmpty()) {
+        return@withContext "请先在设置中填写模型 Base URL 和模型名。"
+    }
+    val system = buildString {
+        append(config.mentorPrompt.ifBlank { "你是 Jarvis，一个运行在 Android 手机上的个人助理。请直接、清晰地完成用户请求。" })
+        if (config.worldBook.isNotBlank()) {
+            append("\n\n世界书：\n")
+            append(config.worldBook)
+        }
+    }
+    val effort = normalizeReasoningEffort(config.reasoningEffort)
+    var lastError = "未知错误"
+    for (model in models) {
+        try {
+            return@withContext requestChatCompletion(
+                baseUrl = baseUrl,
+                apiKey = config.modelApiKey,
+                model = model,
+                messages = JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", system))
+                    .put(JSONObject().put("role", "user").put("content", prompt)),
+                reasoningEffort = if (config.deepThinkingEnabled) effort else "off"
+            )
+        } catch (error: Exception) {
+            lastError = error.message ?: lastError
+        }
+    }
+    "模型请求失败：$lastError"
+}
+
+private suspend fun callVisionModel(config: JarvisConfig, prompt: String, dataUrl: String): String = withContext(Dispatchers.IO) {
+    val baseUrl = config.visionBaseUrl.ifBlank { config.modelBaseUrl }.trim()
+    val model = config.visionModel.ifBlank { config.modelName }.trim()
+    if (baseUrl.isBlank() || model.isBlank()) return@withContext "请先在设置中填写识图模型配置。"
+    val system = config.mentorPrompt.ifBlank { "你是 Jarvis 的视觉理解模块，请准确描述图片中与用户问题有关的内容。" }
+    val content = JSONArray()
+        .put(JSONObject().put("type", "text").put("text", prompt))
+        .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", dataUrl)))
+    requestChatCompletion(
+        baseUrl = baseUrl,
+        apiKey = config.visionApiKey.ifBlank { config.modelApiKey },
+        model = model,
+        messages = JSONArray()
+            .put(JSONObject().put("role", "system").put("content", system))
+            .put(JSONObject().put("role", "user").put("content", content)),
+        reasoningEffort = "off"
+    )
+}
+
+private fun requestChatCompletion(
+    baseUrl: String,
+    apiKey: String,
+    model: String,
+    messages: JSONArray,
+    reasoningEffort: String
+): String {
+    val endpoint = baseUrl.trimEnd('/').let { if (it.endsWith("/chat/completions")) it else "$it/chat/completions" }
+    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        doInput = true
+        doOutput = true
+        connectTimeout = 20_000
+        readTimeout = 90_000
+        setRequestProperty("Content-Type", "application/json")
+        if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+    }
+    val request = JSONObject()
+        .put("model", model)
+        .put("messages", messages)
+        .put("temperature", 0.35)
+        .put("stream", false)
+    if (reasoningEffort in reasoningEfforts && reasoningEffort != "off") {
+        request.put("reasoning_effort", reasoningEffort)
+    }
+    OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(request.toString()) }
+    val responseStream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+    val response = BufferedReader(InputStreamReader(responseStream, Charsets.UTF_8)).use { it.readText() }
+    if (connection.responseCode !in 200..299) {
+        throw IllegalStateException("HTTP ${connection.responseCode}: ${response.take(220)}")
+    }
+    val content = JSONObject(response).optJSONArray("choices")
+        ?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
+    return when (content) {
+        is String -> content.trim()
+        is JSONArray -> buildString {
+            for (index in 0 until content.length()) {
+                val item = content.optJSONObject(index)
+                append(item?.optString("text", "") ?: content.optString(index))
+            }
+        }.trim()
+        else -> "模型返回了空内容。"
+    }
 }
 
 @Composable
@@ -248,7 +568,8 @@ private fun ChatScreen(
     messages: List<String>,
     draft: String,
     onDraftChange: (String) -> Unit,
-    onSend: () -> Unit
+    sending: Boolean,
+    onSend: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
         Text("主对话", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
@@ -272,10 +593,11 @@ private fun ChatScreen(
                 placeholder = { Text("描述你想让 Jarvis 完成的任务") },
                 maxLines = 4
             )
-            IconButton(onClick = onSend, modifier = Modifier.padding(start = 6.dp).size(52.dp)) {
+            IconButton(onClick = { onSend(draft.trim()) }, enabled = !sending, modifier = Modifier.padding(start = 6.dp).size(52.dp)) {
                 Icon(Icons.Default.Send, contentDescription = "发送", tint = MaterialTheme.colorScheme.primary)
             }
         }
+        if (sending) Text("正在请求模型…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
 }
 
@@ -316,7 +638,14 @@ private fun WorkspaceScreen(padding: PaddingValues) {
 }
 
 @Composable
-private fun RuntimeStatusCard(report: BootstrapReport, onRefresh: () -> Unit) {
+private fun RuntimeStatusCard(
+    report: BootstrapReport,
+    onRefresh: () -> Unit,
+    runtimeMessage: String,
+    onRecovery: () -> Unit,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
     val statusText = when (report.state) {
         RuntimeState.READY -> "就绪"
         RuntimeState.RUNNING -> "运行中"
@@ -341,6 +670,21 @@ private fun RuntimeStatusCard(report: BootstrapReport, onRefresh: () -> Unit) {
         Text("版本：${report.runtimeVersion}", fontSize = 12.sp)
         Text("root：${if (report.rootAvailable) "已检测到" else "未检测到"} · Bridge Token：${if (report.bridgeTokenReady) "已生成" else "缺失"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("插件目录：${report.pluginDirectory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (runtimeMessage.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(runtimeMessage, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onStart) { Text("启动 Gateway") }
+            OutlinedButton(onClick = onStop) { Text("停止") }
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onRecovery, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Build, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("运行时修复 / Termux 备用方案")
+        }
     }
 }
 
@@ -350,11 +694,28 @@ private fun SettingsScreen(
     config: JarvisConfig,
     bootstrapReport: BootstrapReport,
     onRefreshRuntime: () -> Unit,
+    runtimeMessage: String,
+    onRecovery: () -> Unit,
+    onStartRuntime: () -> Unit,
+    onStopRuntime: () -> Unit,
     onRestrictionChange: (Boolean) -> Unit,
     onCommandChange: (Boolean) -> Unit,
     onPrefixChange: (String) -> Unit,
     onModelBaseUrlChange: (String) -> Unit,
     onModelNameChange: (String) -> Unit,
+    onModelApiKeyChange: (String) -> Unit,
+    onModelChainChange: (String) -> Unit,
+    onDeepThinkingChange: (Boolean) -> Unit,
+    onReasoningEffortChange: (String) -> Unit,
+    onDeepThinkingModelChange: (String) -> Unit,
+    onVisionBaseUrlChange: (String) -> Unit,
+    onVisionApiKeyChange: (String) -> Unit,
+    onVisionModelChange: (String) -> Unit,
+    onMentorPromptChange: (String) -> Unit,
+    onWorldBookChange: (String) -> Unit,
+    configNotice: String,
+    onImportAiClassroom: () -> Unit,
+    onExportAiClassroom: () -> Unit,
     onRootModeRequest: (RootMode) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
@@ -363,7 +724,7 @@ private fun SettingsScreen(
         Spacer(Modifier.height(12.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
-                RuntimeStatusCard(bootstrapReport, onRefreshRuntime)
+                RuntimeStatusCard(bootstrapReport, onRefreshRuntime, runtimeMessage, onRecovery, onStartRuntime, onStopRuntime)
             }
             item {
                 SettingsCard(Icons.Default.Shield, "限制模式", "默认开启，控制高风险内容和动作") {
@@ -419,11 +780,152 @@ private fun SettingsScreen(
                         placeholder = { Text("gpt-4o-mini") }
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text("API Key 将在接入模型网关时保存到 Android Keystore。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    OutlinedTextField(
+                        value = config.modelApiKey,
+                        onValueChange = onModelApiKeyChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("API Key") },
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = config.modelChain,
+                        onValueChange = onModelChainChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        label = { Text("模型回退链（每行一个，可选）") },
+                        placeholder = { Text("主模型失败时按顺序尝试") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SettingSwitch(
+                        "深度思考",
+                        "关闭时不发送 reasoning_effort；开启后由下方档位控制",
+                        config.deepThinkingEnabled,
+                        onDeepThinkingChange
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text("思考深度：${normalizeReasoningEffort(config.reasoningEffort)}", fontSize = 13.sp)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        reasoningEfforts.chunked(3).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                row.forEach { effort ->
+                                    FilterChip(
+                                        selected = normalizeReasoningEffort(config.reasoningEffort) == effort,
+                                        onClick = { onReasoningEffortChange(effort) },
+                                        label = { Text(effort) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = config.deepThinkingModel,
+                        onValueChange = onDeepThinkingModelChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("深度思考模型（可选）") },
+                        placeholder = { Text("留空则使用主模型") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("识图请求会使用单独的多模态配置；未填写时回退到主模型。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+            item {
+                SettingsCard(Icons.Default.DarkMode, "识图模型", "用于相机取样、截图和多模态任务，兼容 OpenAI image_url 格式") {
+                    OutlinedTextField(
+                        value = config.visionBaseUrl,
+                        onValueChange = onVisionBaseUrlChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("识图 Base URL") },
+                        placeholder = { Text("留空继承主模型 Base URL") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = config.visionModel,
+                        onValueChange = onVisionModelChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("识图模型名") },
+                        placeholder = { Text("gpt-4o-mini") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = config.visionApiKey,
+                        onValueChange = onVisionApiKeyChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("识图 API Key") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        placeholder = { Text("留空继承主模型 API Key") }
+                    )
+                }
+            }
+            item {
+                SettingsCard(Icons.Default.Extension, "AI Classroom 配置同步", "导入课堂配置文件，或导出 Jarvis 可再次导入的兼容 JSON") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onImportAiClassroom, modifier = Modifier.weight(1f)) { Text("导入") }
+                        OutlinedButton(onClick = onExportAiClassroom, modifier = Modifier.weight(1f)) { Text("导出") }
+                    }
+                    if (configNotice.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(configNotice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("支持 AI Classroom 的 classes JSON（会读取第一个课堂的 config），也支持单独的 config JSON。API Key 只在本机配置中保存。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+            item {
+                SettingsCard(Icons.Default.Chat, "全局人格与世界书", "作为所有工作区的默认提示；工作区覆盖能力会在后续工作区编辑器中接入") {
+                    OutlinedTextField(
+                        value = config.mentorPrompt,
+                        onValueChange = onMentorPromptChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        label = { Text("全局提示词") }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = config.worldBook,
+                        onValueChange = onWorldBookChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        label = { Text("全局世界书") }
+                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RuntimeRecoveryDialog(
+    onDismiss: () -> Unit,
+    onReinstall: () -> Unit,
+    onTermux: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("选择 OpenClaw 恢复方式") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Jarvis 会保留配置、插件、工作区和记忆数据。APK 已携带 Android arm64 OpenClaw 候选运行时，可先重建它并重新启动。")
+                Text("修复内置运行时：清理并重新解压内置 Node/OpenClaw，保留数据。若设备原生依赖不兼容，再切换 Termux。", fontSize = 13.sp)
+                Text("Termux 备用方案：打开已安装的 Termux，自动生成固定版本的安装命令，下载 Node.js 和 OpenClaw 2026.9.7。", fontSize = 13.sp)
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                Button(onClick = onTermux) { Text("使用 Termux 备用方案") }
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onReinstall) { Text("修复内置运行时并保留数据") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
 }
 
 @Composable

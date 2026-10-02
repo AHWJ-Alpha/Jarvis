@@ -1,0 +1,25 @@
+{
+  "id": "jarvis-device-bridge",
+  "name": "Jarvis Device Bridge",
+  "description": "Expose approved Jarvis Android capabilities to the local OpenClaw Gateway.",
+  "activation": { "onStartup": true },
+  "enabledByDefault": true,
+  "contracts": {
+    "tools": [
+      "jarvis_device_info",
+      "jarvis_camera_capture",
+      "jarvis_accessibility_inspect",
+      "jarvis_accessibility_click",
+      "jarvis_ocr_read",
+      "jarvis_notification_read",
+      "jarvis_root_exec"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": { "type": "string" }
+    }
+  }
+}

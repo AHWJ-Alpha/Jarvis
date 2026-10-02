@@ -1,0 +1,11 @@
+{
+  "kind": "jarvis-openclaw-bootstrap",
+  "runtime": "openclaw",
+  "version": "2026.9.7",
+  "commit": "c074824a27c96d3983043f9eeb33823cd1772d8c",
+  "architecture": "android-arm64",
+  "containsNativeRuntime": false,
+  "purpose": "offline bootstrap metadata and Termux installer",
+  "requiredForEmbeddedExecution": ["node", "openclaw.mjs", "node_modules"],
+  "bridge": "http://127.0.0.1:18791"
+}

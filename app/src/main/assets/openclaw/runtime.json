@@ -6,7 +6,9 @@
   "repository": "https://github.com/openclaw/openclaw",
   "node": ">=24.16.0 <25 || >=26.1.0",
   "packageManager": "pnpm@12.5.1",
-  "mode": "embedded-source-pending-native-runtime",
+  "mode": "embedded-android-arm64-candidate",
   "gateway": "127.0.0.1",
-  "note": "Jarvis pins the upstream release and starts a local Gateway when a compatible arm64 Node runtime is available. The Android client falls back to Termux when the embedded runtime is unavailable."
+  "nodeRuntime": "Termux official aarch64 Node.js 24.18.0, repackaged for app-private execution",
+  "nativeDependencies": "candidate; verify on Android arm64 before release",
+  "note": "Jarvis tries the embedded Android arm64 Gateway first and falls back to Termux if startup or native dependency checks fail."
 }

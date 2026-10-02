@@ -1,0 +1,19 @@
+{
+  "name": "jarvis-device-bridge",
+  "protocol": "http-json",
+  "baseUrl": "http://127.0.0.1:18791",
+  "health": "GET /health",
+  "listCapabilities": "GET /v1/capabilities",
+  "execute": "POST /v1/capabilities",
+  "authorization": "Bearer ${JARVIS_BRIDGE_TOKEN}",
+  "capabilities": [
+    "device.info",
+    "camera.capture",
+    "accessibility.inspect",
+    "accessibility.click",
+    "ocr.read",
+    "notification.read",
+    "root.exec"
+  ],
+  "approval": "Jarvis decides approval and writes an audit record before high-risk actions"
+}

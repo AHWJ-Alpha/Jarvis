@@ -44,5 +44,15 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:1.7.4")
     implementation("androidx.compose.material3:material3:1.3.0")
     implementation("androidx.compose.material:material-icons-extended:1.7.4")
+    // Use the Play services-backed recognizer so the OCR pipeline is not packaged
+    // into the APK. The bundled ML Kit artifact ships an ELF that is not 16 KB
+    // page-size aligned on Android 15+ devices.
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1")
+
+    // Jarvis does not use Compose path effects. Excluding this optional native
+    // library avoids shipping the unaligned graphics-path ELF on 16 KB devices.
+    configurations.configureEach {
+        exclude(group = "androidx.graphics", module = "graphics-path")
+    }
     debugImplementation("androidx.compose.ui:ui-tooling:1.7.4")
 }
