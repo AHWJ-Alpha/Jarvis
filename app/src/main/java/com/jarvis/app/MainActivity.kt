@@ -312,6 +312,19 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun initialBootstrapReport(context: Context): BootstrapReport {
+    return BootstrapReport(
+        state = RuntimeState.DEGRADED,
+        runtimeMode = com.jarvis.app.runtime.RuntimeMode.REMOTE,
+        runtimeVersion = "未检测到兼容运行时",
+        filesReady = false,
+        rootAvailable = false,
+        bridgeTokenReady = false,
+        pluginDirectory = java.io.File(context.filesDir, "jarvis/plugins").absolutePath,
+        message = "正在检查 OpenClaw 运行时…"
+    )
+}
+
 private fun JarvisApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { ConfigStore(context) }
@@ -319,8 +332,16 @@ private fun JarvisApp() {
     val processManager = remember { OpenClawProcessManager(context) }
     val recoveryManager = remember { RuntimeRecoveryManager(context) }
     val runtimeScope = rememberCoroutineScope()
-    var bootstrapReport by remember { mutableStateOf(bootstrap.bootstrap()) }
+    var bootstrapReport by remember { mutableStateOf(initialBootstrapReport(context)) }
     var runtimeMessage by remember { mutableStateOf("") }
+
+    // Runtime probing is deliberately asynchronous. The chat shell must remain usable
+    // even when an embedded binary or a ROM service is unavailable.
+    LaunchedEffect(Unit) {
+        val result = withContext(Dispatchers.IO) { runCatching { bootstrap.bootstrap() } }
+        result.onSuccess { bootstrapReport = it }
+            .onFailure { bootstrapReport = initialBootstrapReport(context).copy(message = "运行时检查失败") }
+    }
     var config by remember { mutableStateOf(store.load()) }
     var tab by rememberSaveable { mutableStateOf(JarvisTab.Chat) }
     var draft by rememberSaveable { mutableStateOf("") }
