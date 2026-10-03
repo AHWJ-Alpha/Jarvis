@@ -297,12 +297,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Render the shell first so a runtime/bootstrap failure never leaves a blank activity.
+        // Render the shell before any runtime probing so a slow ROM, root check, or
+        // missing embedded binary can never leave the activity blank.
         setContent { JarvisApp() }
 
-        // OpenClaw setup and the bridge service are optional at first render. A missing
-        // binary, notification permission, or restricted ROM must not prevent the UI from opening.
-        runCatching { BootstrapController(this).bootstrap() }
+        // The bridge is optional during first render. Starting it is best effort and must
+        // not block or crash the visible shell on devices that restrict foreground services.
         runCatching {
             val bridgeIntent = Intent(this, JarvisBridgeService::class.java)
             ContextCompat.startForegroundService(this, bridgeIntent)
@@ -310,21 +310,19 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun initialBootstrapReport(context: Context): BootstrapReport = BootstrapReport(
+    state = RuntimeState.DEGRADED,
+    runtimeMode = com.jarvis.app.runtime.RuntimeMode.REMOTE,
+    runtimeVersion = "未检测到兼容运行时",
+    filesReady = false,
+    rootAvailable = false,
+    bridgeTokenReady = false,
+    pluginDirectory = java.io.File(context.filesDir, "jarvis/plugins").absolutePath,
+    message = "正在检查 OpenClaw 运行时…"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun initialBootstrapReport(context: Context): BootstrapReport {
-    return BootstrapReport(
-        state = RuntimeState.DEGRADED,
-        runtimeMode = com.jarvis.app.runtime.RuntimeMode.REMOTE,
-        runtimeVersion = "未检测到兼容运行时",
-        filesReady = false,
-        rootAvailable = false,
-        bridgeTokenReady = false,
-        pluginDirectory = java.io.File(context.filesDir, "jarvis/plugins").absolutePath,
-        message = "正在检查 OpenClaw 运行时…"
-    )
-}
-
 private fun JarvisApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { ConfigStore(context) }
@@ -335,12 +333,18 @@ private fun JarvisApp() {
     var bootstrapReport by remember { mutableStateOf(initialBootstrapReport(context)) }
     var runtimeMessage by remember { mutableStateOf("") }
 
-    // Runtime probing is deliberately asynchronous. The chat shell must remain usable
-    // even when an embedded binary or a ROM service is unavailable.
+    // Probe OpenClaw after the first Compose frame. Runtime extraction, root checks, and
+    // ROM service probes are allowed to fail without preventing the chat shell from opening.
     LaunchedEffect(Unit) {
-        val result = withContext(Dispatchers.IO) { runCatching { bootstrap.bootstrap() } }
-        result.onSuccess { bootstrapReport = it }
-            .onFailure { bootstrapReport = initialBootstrapReport(context).copy(message = "运行时检查失败") }
+        val report = withContext(Dispatchers.IO) {
+            runCatching { bootstrap.bootstrap() }.getOrElse { error ->
+                initialBootstrapReport(context).copy(
+                    state = RuntimeState.ERROR,
+                    message = "运行时检查失败：${error.message ?: "未知错误"}"
+                )
+            }
+        }
+        bootstrapReport = report
     }
     var config by remember { mutableStateOf(store.load()) }
     var tab by rememberSaveable { mutableStateOf(JarvisTab.Chat) }
