@@ -296,10 +296,17 @@ private fun parseAiClassroomConfig(raw: String, current: JarvisConfig): JarvisCo
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        BootstrapController(this).bootstrap()
-        val bridgeIntent = Intent(this, JarvisBridgeService::class.java)
-        ContextCompat.startForegroundService(this, bridgeIntent)
+
+        // Render the shell first so a runtime/bootstrap failure never leaves a blank activity.
         setContent { JarvisApp() }
+
+        // OpenClaw setup and the bridge service are optional at first render. A missing
+        // binary, notification permission, or restricted ROM must not prevent the UI from opening.
+        runCatching { BootstrapController(this).bootstrap() }
+        runCatching {
+            val bridgeIntent = Intent(this, JarvisBridgeService::class.java)
+            ContextCompat.startForegroundService(this, bridgeIntent)
+        }
     }
 }
 
