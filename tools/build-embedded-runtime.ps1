@@ -45,6 +45,11 @@ robocopy "$OpenClawInstall\node_modules" "$BuildRoot\node_modules" /E /COPY:DAT 
 robocopy "$OpenClawInstall\node_modules\openclaw" "$BuildRoot" /E /COPY:DAT /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
 Remove-Item "$BuildRoot\node_modules\openclaw" -Recurse -Force -ErrorAction SilentlyContinue
 robocopy $JarvisPlugin "$BuildRoot\jarvis-plugin" /E /COPY:DAT /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
+Copy-Item "$PSScriptRoot\android-compat.mjs" "$BuildRoot\android-compat.mjs" -Force
+$compatDist = Join-Path $PSScriptRoot "..\app\src\main\assets\openclaw\overrides\node_modules\@openclaw\fs-safe\dist"
+$stagedDist = Join-Path $BuildRoot "node_modules\@openclaw\fs-safe\dist"
+Copy-Item (Join-Path $compatDist "publish-copy-stage.js") $stagedDist -Force
+Copy-Item (Join-Path $compatDist "pinned-write-staged.js") $stagedDist -Force
 New-Item -ItemType Directory -Force "$BuildRoot\openclaw-home" | Out-Null
 @{
     gateway = @{ mode = "local"; bind = "loopback" }

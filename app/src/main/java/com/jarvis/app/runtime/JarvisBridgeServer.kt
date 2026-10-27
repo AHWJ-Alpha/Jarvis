@@ -46,6 +46,7 @@ class JarvisBridgeServer(
 
     private fun handle(socket: Socket) {
         socket.use { client ->
+            client.soTimeout = 10_000
             val input = BufferedInputStream(client.getInputStream())
             val headerText = readHeader(input) ?: return
             val headerLines = headerText.split("\r\n")
@@ -56,6 +57,7 @@ class JarvisBridgeServer(
                 if (separator > 0) headers[line.substring(0, separator).lowercase()] = line.substring(separator + 1).trim()
             }
             val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+            if (contentLength < 0 || contentLength > 262_144) return
             val bodyBytes = ByteArray(contentLength)
             var offset = 0
             while (offset < bodyBytes.size) {
@@ -69,7 +71,7 @@ class JarvisBridgeServer(
             val path = request.getOrNull(1).orEmpty()
             val suppliedToken = headers["authorization"].orEmpty().removePrefix("Bearer ").trim()
             val result = when {
-                suppliedToken != token -> JSONObject().put("ok", false).put("error", "unauthorized") to 401
+                token.length < 32 || suppliedToken != token -> JSONObject().put("ok", false).put("error", "unauthorized") to 401
                 method == "GET" && path == "/health" -> JSONObject().put("ok", true).put("service", "jarvis-bridge") to 200
                 method == "GET" && path == "/v1/capabilities" -> capabilities() to 200
                 method == "POST" && path == "/v1/capabilities" -> execute(body) to 200
@@ -109,10 +111,14 @@ class JarvisBridgeServer(
         return runCatching {
             val input = JSONObject(raw)
             val capability = input.optString("capability")
-            val risk = runCatching { CapabilityRisk.valueOf(input.optString("risk", "MEDIUM").uppercase()) }.getOrDefault(CapabilityRisk.MEDIUM)
+            val risk = when (capability) {
+                "device.info", "accessibility.inspect", "ocr.read" -> CapabilityRisk.LOW
+                "root.exec", "accessibility.click" -> CapabilityRisk.HIGH
+                else -> CapabilityRisk.MEDIUM
+            }
             val result = bridge.execute(
-                CapabilityRequest(capability, input.optJSONObject("arguments") ?: JSONObject(), risk, input.optBoolean("requiresApproval", true)),
-                input.optBoolean("approved", false)
+                CapabilityRequest(capability, input.optJSONObject("arguments") ?: JSONObject(), risk, false),
+                false
             )
             JSONObject().put("ok", result.ok).put("message", result.message).put("data", result.data)
         }.getOrElse { JSONObject().put("ok", false).put("error", "invalid_request: ${it.message}") }

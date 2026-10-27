@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import android.Manifest
 import android.os.Build
+import android.os.Environment
+import android.os.Process
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -22,38 +24,82 @@ data class CapabilityRequest(
 data class CapabilityResult(val ok: Boolean, val message: String, val data: JSONObject = JSONObject())
 
 /**
- * Narrow bridge surface exposed to OpenClaw. Implementations for camera,
- * accessibility and OCR are added behind this contract so the model never
- * receives unrestricted Android or root process access.
+ * Device bridge exposed to OpenClaw. Camera, accessibility and OCR use
+ * dedicated capabilities; shell access requires the user's Full root mode.
  */
 class DeviceCapabilityBridge(private val context: Context) {
     private val auditLog = File(context.filesDir, "jarvis/logs/capability-audit.jsonl")
+    private val memory = OperationMemory.at(context.filesDir)
+    private val operationHost = object : OperationHost {
+        override fun call(capability: String, arguments: JSONObject): CapabilityResult =
+            execute(CapabilityRequest(capability, arguments, CapabilityRisk.HIGH, false))
+        override fun inspect(): JSONObject = AccessibilityController.inspect()
+        override fun version(packageName: String): String? = runCatching {
+            val info = context.packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= 28) info.longVersionCode.toString() else info.versionCode.toString()
+        }.getOrNull()
+        override fun fileState(path: String): JSONObject? {
+            if (!path.startsWith("/") || path.contains('\n') || path.contains('\u0000')) return null
+            val file = File(path)
+            if (file.isFile) return JSONObject().put("path", path).put("size", file.length()).put("modified", file.lastModified())
+            val fullRoot = context.getSharedPreferences("jarvis_config", Context.MODE_PRIVATE).getInt("rootMode", 1) == 2
+            val quoted = "'" + path.replace("'", "'\\''") + "'"
+            val result = rootExec("test -f $quoted && stat -c '%s %Y' $quoted", fullRoot)
+            if (!result.ok) return null
+            val parts = result.message.trim().split(Regex("\\s+"))
+            val size = parts.getOrNull(0)?.toLongOrNull() ?: return null
+            val modified = parts.getOrNull(1)?.toLongOrNull() ?: return null
+            return JSONObject().put("path", path).put("size", size).put("modified", modified * 1000)
+        }
+    }
+
+    fun runOperationMemory(arguments: JSONObject): CapabilityResult = memory.execute(arguments, operationHost)
 
     fun execute(request: CapabilityRequest, approved: Boolean = false): CapabilityResult {
+        if (RemoteExecutionGuard.active && !RemoteExecutionGuard.deviceControlAllowed) {
+            return CapabilityResult(false, "远程设备操作尚未在手机设置中授权；本次设备能力未执行。")
+        }
         if (request.requiresApproval && !approved) return CapabilityResult(false, "需要用户确认：${request.capability}")
+        val fullRoot = context.getSharedPreferences("jarvis_config", Context.MODE_PRIVATE).getInt("rootMode", 1) == 2
         auditLog.parentFile?.mkdirs()
         auditLog.appendText(JSONObject().apply {
             put("capability", request.capability)
             put("risk", request.risk.name)
-            put("approved", approved)
+            put("fullRoot", fullRoot)
             put("timestamp", System.currentTimeMillis())
         }.toString() + "\n")
-        return when (request.capability) {
-            "device.info" -> CapabilityResult(true, "设备信息可用", JSONObject().put("package", context.packageName))
-            "root.exec" -> rootExec(request.arguments.optString("command"), approved)
+        val before = if (request.capability.startsWith("accessibility.")) AccessibilityController.inspect() else JSONObject()
+        val result = when (request.capability) {
+            "operation.memory" -> memory.execute(request.arguments, operationHost)
+            "device.info" -> CapabilityResult(true, "设备信息可用", JSONObject()
+                .put("package", context.packageName).put("manufacturer", Build.MANUFACTURER)
+                .put("brand", Build.BRAND).put("model", Build.MODEL)
+                .put("androidVersion", Build.VERSION.RELEASE).put("sdk", Build.VERSION.SDK_INT)
+                .put("androidUserId", Process.myUid() / 100000)
+                .put("externalStorage", Environment.getExternalStorageDirectory().absolutePath))
+            "root.exec" -> rootExec(request.arguments.optString("command"), fullRoot)
             "camera.capture" -> cameraCapture()
             "accessibility.inspect" -> accessibilityInspect()
             "accessibility.click" -> accessibilityClick(request.arguments)
+            "accessibility.input" -> accessibilityInput(request.arguments)
+            "accessibility.global" -> accessibilityGlobal(request.arguments)
+            "accessibility.perform" -> AccessibilityController.perform(request.arguments)
+            "accessibility.swipe" -> CapabilityResult(AccessibilityController.swipe(request.arguments), "滑动已执行，需核实界面")
+            "app.launch" -> appLaunch(request.arguments)
             "ocr.read" -> accessibilityOcr()
             "notification.read" -> notificationRead()
             else -> CapabilityResult(false, "未知设备能力：${request.capability}")
         }
+        if (!request.capability.startsWith("operation.")) runCatching { memory.record(request.capability, request.arguments, before, result) }
+            .onFailure { android.util.Log.w("JarvisOperationMemory", "Recording unavailable", it) }
+        return result
     }
 
     companion object {
         fun capabilityNames(): List<String> = listOf(
             "device.info", "camera.capture", "accessibility.inspect", "accessibility.click",
-            "ocr.read", "notification.read", "root.exec"
+            "accessibility.input", "accessibility.global", "app.launch",
+            "ocr.read", "notification.read", "root.exec", "accessibility.perform", "accessibility.swipe", "operation.memory"
         )
     }
 
@@ -80,6 +126,40 @@ class DeviceCapabilityBridge(private val context: Context) {
         return CapabilityResult(AccessibilityController.click(x.toFloat(), y.toFloat()), "已提交坐标点击")
     }
 
+    private fun accessibilityInput(arguments: JSONObject): CapabilityResult {
+        if (AccessibilityController.service == null) return CapabilityResult(false, "需要启用 Jarvis 无障碍服务")
+        val text = arguments.optString("text")
+        if (text.isBlank() || text.length > 4000) return CapabilityResult(false, "输入文字长度无效")
+        return CapabilityResult(AccessibilityController.input(text), "已请求向当前输入框写入文字")
+    }
+
+    private fun accessibilityGlobal(arguments: JSONObject): CapabilityResult {
+        if (AccessibilityController.service == null) return CapabilityResult(false, "需要启用 Jarvis 无障碍服务")
+        val action = arguments.optString("action")
+        return CapabilityResult(AccessibilityController.global(action), "已请求执行 $action")
+    }
+
+    private fun appLaunch(arguments: JSONObject): CapabilityResult {
+        val packageName = arguments.optString("package").trim()
+        if (!packageName.matches(Regex("[A-Za-z0-9_.]{3,150}"))) return CapabilityResult(false, "应用包名无效")
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            ?: return CapabilityResult(false, "未找到该应用的启动入口")
+        val fullRoot = context.getSharedPreferences("jarvis_config", Context.MODE_PRIVATE).getInt("rootMode", 1) == 2
+        val component = intent.component?.flattenToString()
+        if (fullRoot && component != null && component.matches(Regex("[A-Za-z0-9_.$/]+"))) {
+            // MIUI can silently reject startActivity while Jarvis operates in the background.
+            // Resolve through PackageManager and explicitly target this Android user.
+            val launched = rootExec("am start --user ${Process.myUid() / 100000} -n '$component'", true)
+            return if (launched.ok && !launched.message.contains("Error:")) {
+                CapabilityResult(true, "已请求在当前 Android 用户启动 $packageName；请检查界面确认")
+            } else CapabilityResult(false, "启动失败：${launched.message}")
+        }
+        return runCatching {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            CapabilityResult(true, "已启动 $packageName")
+        }.getOrElse { CapabilityResult(false, "启动失败：${it.message}") }
+    }
+
     private fun accessibilityOcr(): CapabilityResult {
         if (AccessibilityController.service == null) return CapabilityResult(false, "需要启用 Jarvis 无障碍服务后才能读取界面文字", JSONObject().put("settings", Settings.ACTION_ACCESSIBILITY_SETTINGS))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -94,14 +174,25 @@ class DeviceCapabilityBridge(private val context: Context) {
         return CapabilityResult(true, "已读取最近通知", JSONObject().put("notifications", NotificationController.list()))
     }
 
-    private fun rootExec(command: String, approved: Boolean): CapabilityResult {
-        if (!approved || command.isBlank()) return CapabilityResult(false, "root 命令需要明确确认")
+    private fun rootExec(command: String, fullRoot: Boolean): CapabilityResult {
+        if (!fullRoot || command.isBlank()) return CapabilityResult(false, "root 命令需要先在设置中开启完全模式")
         return runCatching {
             val process = ProcessBuilder("su", "-c", command).redirectErrorStream(true).start()
+            val output = StringBuilder()
+            val reader = Thread {
+                process.inputStream.bufferedReader().use { stream ->
+                    val buffer = CharArray(1024)
+                    while (true) {
+                        val count = stream.read(buffer)
+                        if (count < 0) break
+                        if (output.length < 12000) output.append(buffer, 0, minOf(count, 12000 - output.length))
+                    }
+                }
+            }.apply { start() }
             val finished = process.waitFor(10, TimeUnit.SECONDS)
-            val output = process.inputStream.bufferedReader().readText().take(12000)
             if (!finished) process.destroyForcibly()
-            CapabilityResult(finished && process.exitValue() == 0, output.ifBlank { "root 命令已执行" })
+            reader.join(1000)
+            CapabilityResult(finished && process.exitValue() == 0, output.toString().ifBlank { "root 命令已执行" })
         }.getOrElse { CapabilityResult(false, "root 执行失败：${it.message}") }
     }
 }

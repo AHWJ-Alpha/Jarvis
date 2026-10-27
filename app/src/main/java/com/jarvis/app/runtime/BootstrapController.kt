@@ -8,6 +8,7 @@ import java.util.Base64
 import java.util.zip.ZipInputStream
 
 class BootstrapController(private val context: Context) {
+    companion object { private val bootstrapLock = Any() }
     private val rootDirectory = File(context.filesDir, "jarvis")
     private val runtimeDirectory = File(rootDirectory, "runtime")
     private val pluginDirectory = File(rootDirectory, "plugins")
@@ -16,17 +17,23 @@ class BootstrapController(private val context: Context) {
     private val bridgeTokenFile = File(configDirectory, "bridge.token")
     private val runtimeModeFile = File(configDirectory, "runtime-mode")
 
-    fun bootstrap(): BootstrapReport {
+    fun prepareTokens() = synchronized(bootstrapLock) {
+        configDirectory.mkdirs()
+        ensureBridgeToken()
+    }
+
+    fun bootstrap(): BootstrapReport = synchronized(bootstrapLock) {
         val filesReady = listOf(rootDirectory, runtimeDirectory, pluginDirectory, configDirectory, logsDirectory)
             .all { it.mkdirs() || it.isDirectory }
         ensureEmbeddedBundle()
+        val compatibilityReady = installAndroidCompatibility()
         val tokenReady = ensureBridgeToken()
         val runtimeMarker = readInstalledRuntimeVersion()
         val rootAvailable = probeRoot()
         val selectedMode = runtimeModeFile.takeIf { it.isFile }?.readText()?.trim()
             ?.let { runCatching { RuntimeMode.valueOf(it) }.getOrNull() }
         val state = when {
-            !filesReady || !tokenReady -> RuntimeState.ERROR
+            !filesReady || !tokenReady || !compatibilityReady -> RuntimeState.ERROR
             runtimeMarker == null -> RuntimeState.DEGRADED
             else -> RuntimeState.READY
         }
@@ -54,6 +61,24 @@ class BootstrapController(private val context: Context) {
     fun bridgeToken(): String = bridgeTokenFile.takeIf { it.isFile }?.readText()?.trim().orEmpty()
 
     fun pluginDirectory(): File = pluginDirectory
+
+    private fun installAndroidCompatibility(): Boolean {
+        val files = listOf(
+            "android-compat.mjs",
+            "jarvis-plugin/index.js",
+            "jarvis-plugin/openclaw.plugin.json",
+            "node_modules/@openclaw/fs-safe/dist/publish-copy-stage.js",
+            "node_modules/@openclaw/fs-safe/dist/pinned-write-staged.js"
+        )
+        return files.map { relative -> runCatching {
+            val target = File(runtimeDirectory, relative)
+            target.parentFile?.mkdirs()
+            context.assets.open("openclaw/overrides/$relative").use { input ->
+                val bytes = input.readBytes()
+                if (!target.isFile || !target.readBytes().contentEquals(bytes)) target.writeBytes(bytes)
+            }
+        }.onFailure { Log.e("JarvisBootstrap", "Compatibility overlay failed: $relative", it) }.isSuccess }.all { it }
+    }
 
     private fun ensureEmbeddedBundle(): Boolean {
         val marker = File(runtimeDirectory, ".installed")

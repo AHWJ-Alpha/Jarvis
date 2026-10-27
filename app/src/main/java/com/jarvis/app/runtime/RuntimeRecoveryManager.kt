@@ -24,12 +24,31 @@ class RuntimeRecoveryManager(private val context: Context) {
         val action = RecoveryAction.REINSTALL_EMBEDDED
         return runCatching {
             val backup = File(root, "runtime.backup-${System.currentTimeMillis()}")
-            if (runtime.exists()) runtime.renameTo(backup)
+            if (runtime.exists() && !runtime.renameTo(backup)) error("无法备份旧运行时")
             runtime.mkdirs()
-            val metadata = File(runtime, "runtime.json")
-            context.assets.open("openclaw/runtime.json").use { input -> metadata.outputStream().use(input::copyTo) }
-            backup.deleteRecursively()
-            RecoveryResult(true, "已清理并重建内置 Android arm64 OpenClaw 运行时目录。配置、插件和工作区数据已保留；如果 Gateway 仍无法启动，可以切换 Termux 备用方案。", action)
+            try {
+                val report = BootstrapController(context).bootstrap()
+                if (report.state != RuntimeState.READY) error(report.message)
+                for (name in listOf("openclaw-home", "home")) {
+                    val old = File(backup, name)
+                    if (old.exists()) {
+                        val fresh = File(runtime, name)
+                        fresh.deleteRecursively()
+                        if (!old.renameTo(fresh)) error("无法恢复 $name")
+                    }
+                }
+                backup.deleteRecursively()
+                RecoveryResult(true, "内置 OpenClaw 已重装；配置、会话和工作区数据已保留。", action)
+            } catch (error: Exception) {
+                for (name in listOf("openclaw-home", "home")) {
+                    val restored = File(runtime, name)
+                    val old = File(backup, name)
+                    if (backup.exists() && restored.exists() && !old.exists()) restored.renameTo(old)
+                }
+                runtime.deleteRecursively()
+                if (backup.exists()) backup.renameTo(runtime)
+                throw error
+            }
         }.getOrElse { RecoveryResult(false, "修复内置运行时失败：${it.message}", action) }
     }
 

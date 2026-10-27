@@ -24,14 +24,32 @@ import com.jarvis.app.runtime.RuntimeState
 import com.jarvis.app.runtime.RuntimeRecoveryManager
 import com.jarvis.app.runtime.JarvisBridgeServer
 import com.jarvis.app.runtime.JarvisBridgeService
+import com.jarvis.app.runtime.DeviceTaskCoordinator
+import com.jarvis.app.runtime.ConversationStore
+import com.jarvis.app.runtime.ChatMessage
+import com.jarvis.app.runtime.ChatMessageRole
+import com.jarvis.app.runtime.ChatSession
+import com.jarvis.app.runtime.CommunityPluginManager
+import com.jarvis.app.runtime.GeneratedOpenClawPlugin
+import com.jarvis.app.runtime.ManagedOpenClawPlugin
 import com.jarvis.app.runtime.RuntimeToolManager
 import com.jarvis.app.runtime.RuntimeToolStatus
 import com.jarvis.app.runtime.ToolSource
+import com.jarvis.app.runtime.ModelConnectionChecker
+import com.jarvis.app.runtime.AccessibilityStartupManager
+import com.jarvis.app.runtime.AccessibilityController
+import com.jarvis.app.runtime.AutomationManager
+import com.jarvis.app.runtime.AutomationKind
+import com.jarvis.app.runtime.AutomationRule
+import com.jarvis.app.runtime.AutomationEvent
 import android.content.Intent
+import android.provider.Settings
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,6 +74,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -68,6 +87,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Terminal
@@ -75,10 +95,15 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -92,18 +117,24 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
 import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -147,14 +178,6 @@ private fun Modifier.jarvisPressScale(): Modifier = composed {
 }
 
 private enum class JarvisTab(val label: String) { Chat("对话"), Tasks("任务"), Workspace("工作区"), Settings("设置") }
-private enum class JarvisTheme(val label: String, val primary: Color, val background: Color, val surface: Color) {
-    Deep("深海", Color(0xFF176B87), Color(0xFFF4F7F6), Color.White),
-    Graphite("石墨", Color(0xFF46515C), Color(0xFFF2F4F6), Color.White),
-    Forest("松林", Color(0xFF2E6B55), Color(0xFFF2F7F3), Color.White),
-    Ink("墨黑", Color(0xFFB8D8D4), Color(0xFF101519), Color(0xFF1B2428))
-}
-
-private data class ConversationBranch(val title: String, val messages: List<String>)
 
 private enum class RootMode(val label: String) {
     Off("关闭"), Standard("标准"), Full("完全")
@@ -209,9 +232,9 @@ private class ConfigStore(context: Context) {
         theme = JarvisTheme.entries.getOrElse(prefs.getInt("theme", 0)) { JarvisTheme.Deep }
     )
 
-    fun save(config: JarvisConfig) {
+    fun save(config: JarvisConfig, durable: Boolean = false): Boolean {
         val effort = normalizeReasoningEffort(config.reasoningEffort)
-        prefs.edit()
+        val editor = prefs.edit()
             .putBoolean("restrictionMode", config.restrictionMode)
             .putInt("rootMode", config.rootMode.ordinal)
             .putBoolean("commandChannelEnabled", config.commandChannelEnabled)
@@ -229,7 +252,7 @@ private class ConfigStore(context: Context) {
             .putString("mentorPrompt", config.mentorPrompt)
             .putString("worldBook", config.worldBook)
             .putInt("theme", config.theme.ordinal)
-            .apply()
+        return if (durable) editor.commit() else { editor.apply(); true }
     }
 }
 
@@ -296,7 +319,7 @@ private fun parseAiClassroomConfig(raw: String, current: JarvisConfig): JarvisCo
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        BootstrapController(this).prepareTokens()
         // Render the shell before any runtime probing so a slow ROM, root check, or
         // missing embedded binary can never leave the activity blank.
         setContent { JarvisApp() }
@@ -306,6 +329,14 @@ class MainActivity : ComponentActivity() {
         runCatching {
             val bridgeIntent = Intent(this, JarvisBridgeService::class.java)
             ContextCompat.startForegroundService(this, bridgeIntent)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val manager = AccessibilityStartupManager(this)
+        if (manager.autoConnect && !manager.isEnabled()) {
+            Thread { manager.connectWithRoot() }.start()
         }
     }
 }
@@ -327,7 +358,7 @@ private fun JarvisApp() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { ConfigStore(context) }
     val bootstrap = remember { BootstrapController(context) }
-    val processManager = remember { OpenClawProcessManager(context) }
+    val processManager = remember { OpenClawProcessManager.get(context) }
     val recoveryManager = remember { RuntimeRecoveryManager(context) }
     val runtimeScope = rememberCoroutineScope()
     var bootstrapReport by remember { mutableStateOf(initialBootstrapReport(context)) }
@@ -347,22 +378,155 @@ private fun JarvisApp() {
         bootstrapReport = report
     }
     var config by remember { mutableStateOf(store.load()) }
+    val conversationStore = remember { ConversationStore(context) }
+    var conversations by remember { mutableStateOf(conversationStore.loadOrCreate()) }
+    var activeConversationId by rememberSaveable { mutableStateOf(conversationStore.activeSessionId(conversations)) }
+    val view = LocalView.current
+    SideEffect {
+        (context as? ComponentActivity)?.window?.let { window ->
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !config.theme.dark
+                isAppearanceLightNavigationBars = !config.theme.dark
+            }
+        }
+    }
     var tab by rememberSaveable { mutableStateOf(JarvisTab.Chat) }
     var draft by rememberSaveable { mutableStateOf("") }
-    var messages by remember { mutableStateOf(listOf("Jarvis 已启动。你可以从这里开始描述任务。")) }
+    var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     var showRootWarning by remember { mutableStateOf(false) }
     var pendingRootMode by remember { mutableStateOf<RootMode?>(null) }
     var showRecovery by remember { mutableStateOf(false) }
     var configNotice by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var showNavigation by rememberSaveable { mutableStateOf(false) }
-    var workspaceName by rememberSaveable { mutableStateOf("默认工作区") }
-    var branches by remember { mutableStateOf(listOf(ConversationBranch("主对话", messages))) }
+    var workspaceName by rememberSaveable {
+        mutableStateOf(conversations.firstOrNull { it.id == activeConversationId }?.workspace ?: "默认工作区")
+    }
+    val activeConversation = conversations.firstOrNull { it.id == activeConversationId } ?: conversations.first()
+    val messages = activeConversation.messages
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    LaunchedEffect(Unit) {
+        config = store.load()
+    }
 
     fun update(next: JarvisConfig) {
         config = next
         store.save(next)
+    }
+
+    fun saveConversation(updated: ChatSession) {
+        val next = conversations.map { if (it.id == updated.id) updated else it }.sortedByDescending { it.updatedAt }
+        conversations = next
+        conversationStore.save(next, activeConversationId)
+    }
+
+    fun createConversation() {
+        val created = ChatSession(workspace = workspaceName)
+        conversations = (listOf(created) + conversations).take(100)
+        activeConversationId = created.id
+        conversationStore.save(conversations, created.id)
+        draft = ""
+        editingMessageId = null
+        tab = JarvisTab.Chat
+        showNavigation = false
+    }
+
+    fun createBranch() {
+        val source = activeConversation
+        val created = ChatSession(
+            title = "分支 · ${source.title}".take(32),
+            workspace = source.workspace,
+            messages = source.messages
+        )
+        conversations = (listOf(created) + conversations).take(100)
+        activeConversationId = created.id
+        conversationStore.save(conversations, created.id)
+        draft = ""
+        editingMessageId = null
+        tab = JarvisTab.Chat
+        showNavigation = false
+    }
+
+    fun selectConversation(id: String) {
+        if (conversations.none { it.id == id }) return
+        activeConversationId = id
+        conversationStore.save(conversations, id)
+        draft = ""
+        editingMessageId = null
+        workspaceName = conversations.first { it.id == id }.workspace
+        tab = JarvisTab.Chat
+        showNavigation = false
+    }
+
+    fun undoLatestTurn() {
+        if (sending) return
+        editingMessageId = null
+        draft = ""
+        val editable = activeConversation.messages.toMutableList()
+        val lastAssistant = editable.indexOfLast { it.role == ChatMessageRole.ASSISTANT }
+        if (lastAssistant >= 0) {
+            editable.removeAt(lastAssistant)
+            val precedingUser = editable.indexOfLast { it.role == ChatMessageRole.USER }
+            if (precedingUser >= 0) editable.removeAt(precedingUser)
+        } else {
+            val pendingUser = editable.indexOfLast { it.role == ChatMessageRole.USER }
+            if (pendingUser >= 0) editable.removeAt(pendingUser)
+        }
+        saveConversation(activeConversation.copy(
+            title = if (editable.none { it.role == ChatMessageRole.USER }) "新对话" else activeConversation.title,
+            messages = editable,
+            updatedAt = System.currentTimeMillis()
+        ))
+    }
+
+    fun editLatestUserMessage() {
+        if (sending) return
+        val latestUser = activeConversation.messages.lastOrNull { it.role == ChatMessageRole.USER }
+        val userIndex = activeConversation.messages.indexOfLast { it.role == ChatMessageRole.USER }
+        if (userIndex < 0) return
+        editingMessageId = latestUser?.id
+        draft = latestUser?.content.orEmpty()
+    }
+
+    fun cancelEdit() {
+        editingMessageId = null
+        draft = ""
+    }
+
+    fun sendPrompt(clean: String) {
+        if (clean.isBlank() || sending) return
+        val sessionId = activeConversation.id
+        val editIndex = editingMessageId?.let { id -> activeConversation.messages.indexOfFirst { it.id == id } } ?: -1
+        val previousHistory = if (editIndex >= 0) activeConversation.messages.take(editIndex) else activeConversation.messages
+        val currentMessages = (previousHistory + ChatMessage(role = ChatMessageRole.USER, content = clean)).takeLast(300)
+        val title = if (editIndex == 0 || activeConversation.messages.none { it.role == ChatMessageRole.USER })
+            clean.lineSequence().first().take(32) else activeConversation.title
+        saveConversation(activeConversation.copy(title = title, messages = currentMessages, updatedAt = System.currentTimeMillis()))
+        draft = ""
+        editingMessageId = null
+        val ruleDraft = AutomationManager.parse(clean)
+        if (ruleDraft != null) {
+            val rule = AutomationManager(context).create(ruleDraft)
+            val extra = if (rule.kind == AutomationKind.PIXIV_NEW_WORK && rule.artist.isBlank())
+                "请到“任务”里补上画师名称或 ID。" else "请到“任务”里检查规则并手动启用。"
+            val latest = conversations.firstOrNull { it.id == sessionId } ?: return
+            saveConversation(latest.copy(messages = (latest.messages + ChatMessage(
+                role = ChatMessageRole.ASSISTANT,
+                content = "已创建自动化草案「${rule.title}」，目前暂停。$extra 触发时会先检查通知内容，再按全局风格执行一次操作。"
+            )).takeLast(300), updatedAt = System.currentTimeMillis()))
+            return
+        }
+        sending = true
+        runtimeScope.launch {
+            val reply = callJarvisModel(context, config, sessionId, currentMessages)
+            val latest = conversations.firstOrNull { it.id == sessionId }
+            if (latest != null) saveConversation(latest.copy(
+                messages = (latest.messages + ChatMessage(role = ChatMessageRole.ASSISTANT, content = reply)).takeLast(300),
+                updatedAt = System.currentTimeMillis()
+            ))
+            sending = false
+        }
     }
 
     val importConfigLauncher = rememberLauncherForActivityResult(
@@ -399,36 +563,32 @@ private fun JarvisApp() {
     }
 
     Crossfade(targetState = config.theme, animationSpec = tween(300), label = "theme-transition") { activeTheme ->
-    MaterialTheme(colorScheme = if (activeTheme == JarvisTheme.Ink) androidx.compose.material3.darkColorScheme(
-        primary = activeTheme.primary,
-        secondary = Color(0xFFB8D8D4),
-        background = activeTheme.background,
-        surface = activeTheme.surface,
-        onSurface = Color(0xFFE6F1F0)
-    ) else androidx.compose.material3.lightColorScheme(
-        primary = activeTheme.primary,
-        secondary = Color(0xFFB56D3E),
-        background = activeTheme.background,
-        surface = activeTheme.surface,
-        onSurface = Color(0xFF10212B)
+    CompositionLocalProvider(LocalJarvisTheme provides activeTheme) {
+    MaterialTheme(colorScheme = activeTheme.colorScheme(), shapes = androidx.compose.material3.Shapes(
+        small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp)
     )) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Scaffold(
                 topBar = {
                     TopAppBar(
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                         navigationIcon = {
                             IconButton(onClick = { showNavigation = !showNavigation }, modifier = Modifier.jarvisPressScale()) {
                                 Icon(Icons.Default.Menu, contentDescription = "打开导航")
                             }
                         },
                         title = {
-                            Column {
-                                Text(workspaceName, fontWeight = FontWeight.SemiBold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            JarvisBrandMark(size = 34)
+                            Spacer(Modifier.width(12.dp))
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text(activeConversation.title.ifBlank { workspaceName }, maxLines = 1, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     text = "Jarvis · ${if (config.rootMode == RootMode.Full) "完全模式" else "个人助理"}",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
                             }
                         },
                         actions = {
@@ -445,32 +605,28 @@ private fun JarvisApp() {
             ) { padding ->
                 if (isLandscape) {
                     Row(Modifier.fillMaxSize().padding(padding)) {
-                        SessionRail(tab, workspaceName, branches, onTab = { tab = it }, onWorkspace = { workspaceName = it }, modifier = Modifier.width(280.dp))
+                        SessionRail(tab, workspaceName, conversations, activeConversationId, onTab = { tab = it }, onWorkspace = { workspaceName = it }, onSelectConversation = ::selectConversation, onNewConversation = ::createConversation, modifier = Modifier.width(280.dp))
                         VerticalDivider()
-                        Box(Modifier.weight(1f)) { Crossfade(targetState = tab, animationSpec = tween(220), label = "landscape-content") { selectedTab -> MainContent(selectedTab, padding = PaddingValues(0.dp), messages, draft, sending, onDraftChange = { draft = it }, onSend = { clean ->
-                            if (clean.isNotEmpty()) { messages = messages + "你：$clean"; draft = ""; sending = true; runtimeScope.launch { messages = messages + "Jarvis：${callJarvisModel(config, clean)}"; sending = false } }
-                        }, onBranch = { branches = branches + ConversationBranch("分支 ${branches.size}", messages); tab = JarvisTab.Chat }, config = config, bootstrapReport = bootstrapReport, runtimeMessage = runtimeMessage, onConfig = ::update, onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() }, onRecovery = { showRecovery = true }, onStartRuntime = { runtimeScope.launch { runtimeMessage = processManager.start().message; bootstrapReport = bootstrap.bootstrap() } }, onStopRuntime = { runtimeScope.launch { processManager.stop(); runtimeMessage = "OpenClaw Gateway 已停止"; bootstrapReport = bootstrap.bootstrap() } }, onRootModeRequest = { pendingRootMode = it; if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it)) }, configNotice = configNotice, onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") }) } }
+                        Box(Modifier.weight(1f)) { Crossfade(targetState = tab, animationSpec = tween(220), label = "landscape-content") { selectedTab -> MainContent(selectedTab, padding = PaddingValues(0.dp), activeConversation.id, messages, draft, sending, onDraftChange = { draft = it }, onSend = ::sendPrompt, onNewConversation = ::createConversation, onBranch = ::createBranch, onUndoLatest = ::undoLatestTurn, onEditLatest = ::editLatestUserMessage, onCancelEdit = ::cancelEdit, editingLatest = editingMessageId != null, canUndoLatest = messages.isNotEmpty() && !sending, canEditLatest = messages.any { it.role == ChatMessageRole.USER } && !sending, config = config, bootstrapReport = bootstrapReport, runtimeMessage = runtimeMessage, onConfig = ::update, onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() }, onRecovery = { showRecovery = true }, onStartRuntime = { runtimeScope.launch { runtimeMessage = processManager.start().message; bootstrapReport = bootstrap.bootstrap() } }, onStopRuntime = { runtimeScope.launch { processManager.stop(); runtimeMessage = "OpenClaw Gateway 已停止"; bootstrapReport = bootstrap.bootstrap() } }, onRootModeRequest = { pendingRootMode = it; if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it)) }, configNotice = configNotice, onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") }) } }
                     }
                 } else {
                     Crossfade(targetState = tab, animationSpec = tween(220), label = "portrait-content") { selectedTab -> when (selectedTab) {
                     JarvisTab.Chat -> ChatScreen(
                         padding = padding,
+                        conversationId = activeConversation.id,
                         messages = messages,
                         draft = draft,
                         onDraftChange = { draft = it },
                         sending = sending,
-                        onSend = { clean ->
-                            if (clean.isNotEmpty()) {
-                                messages = messages + "你：$clean"
-                                draft = ""
-                                sending = true
-                                runtimeScope.launch {
-                                    val reply = callJarvisModel(config, clean)
-                                    messages = messages + "Jarvis：$reply"
-                                    sending = false
-                                }
-                            }
-                        }
+                        onSend = ::sendPrompt,
+                        onNewConversation = ::createConversation,
+                        onBranch = ::createBranch,
+                        onUndoLatest = ::undoLatestTurn,
+                        onEditLatest = ::editLatestUserMessage,
+                        onCancelEdit = ::cancelEdit,
+                        editingLatest = editingMessageId != null,
+                        canUndoLatest = messages.isNotEmpty() && !sending,
+                        canEditLatest = messages.any { it.role == ChatMessageRole.USER } && !sending
                     )
                     JarvisTab.Tasks -> TasksScreen(padding)
                     JarvisTab.Workspace -> WorkspaceScreen(padding)
@@ -529,15 +685,12 @@ private fun JarvisApp() {
                 }
             }
         }
-    }
-    }
-
     AnimatedVisibility(
         visible = isLandscape.not() && showNavigation,
         enter = fadeIn(tween(180)) + slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = tween(260)),
         exit = fadeOut(tween(150)) + slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(220))
     ) {
-        NavigationDrawerOverlay(tab, workspaceName, onTab = { tab = it; showNavigation = false }, onWorkspace = { workspaceName = it; showNavigation = false }, onDismiss = { showNavigation = false })
+        NavigationDrawerOverlay(tab, workspaceName, conversations, activeConversationId, onTab = { tab = it; showNavigation = false }, onWorkspace = { workspaceName = it; showNavigation = false }, onSelectConversation = ::selectConversation, onNewConversation = ::createConversation, onDismiss = { showNavigation = false })
     }
 
     if (showRootWarning && pendingRootMode == RootMode.Full) {
@@ -555,10 +708,13 @@ private fun JarvisApp() {
         RuntimeRecoveryDialog(
             onDismiss = { showRecovery = false },
             onReinstall = {
-                val result = recoveryManager.reinstallEmbeddedPreservingData()
-                runtimeMessage = result.message
-                bootstrapReport = bootstrap.bootstrap()
                 showRecovery = false
+                runtimeMessage = "正在修复内置运行时并保留数据…"
+                runtimeScope.launch {
+                    val result = withContext(Dispatchers.IO) { recoveryManager.reinstallEmbeddedPreservingData() }
+                    runtimeMessage = result.message
+                    bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() }
+                }
             },
             onTermux = {
                 val result = recoveryManager.launchTermuxSetup()
@@ -567,45 +723,66 @@ private fun JarvisApp() {
             }
         )
     }
+    }
+    }
+    }
 }
 
-private suspend fun callJarvisModel(config: JarvisConfig, prompt: String): String = withContext(Dispatchers.IO) {
-    val baseUrl = config.modelBaseUrl.trim()
-    val models = (listOfNotNull(
-        config.deepThinkingModel.takeIf { config.deepThinkingEnabled && normalizeReasoningEffort(config.reasoningEffort) != "off" },
-        config.modelName
-    ) + config.modelChain.split(',', '\n', '，', '；', ';'))
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .distinct()
-    if (baseUrl.isBlank() || models.isEmpty()) {
-        return@withContext "请先在设置中填写模型 Base URL 和模型名。"
-    }
-    val system = buildString {
-        append(config.mentorPrompt.ifBlank { "你是 Jarvis，一个运行在 Android 手机上的个人助理。请直接、清晰地完成用户请求。" })
-        if (config.worldBook.isNotBlank()) {
-            append("\n\n世界书：\n")
-            append(config.worldBook)
+private suspend fun callJarvisModel(
+    context: Context,
+    config: JarvisConfig,
+    conversationId: String,
+    history: List<ChatMessage>
+): String = withContext(Dispatchers.IO) {
+    DeviceTaskCoordinator.run("本机对话") {
+    val prompt = history.lastOrNull { it.role == ChatMessageRole.USER }?.content.orEmpty()
+    val operationMemory = com.jarvis.app.runtime.OperationMemory.at(context.filesDir)
+    val memoryStatus = runCatching { operationMemory.begin(prompt); operationMemory.summary() }
+        .getOrElse { "操作记忆暂不可用，请通过普通工具完成任务并如实报告记忆错误。" }
+    val gateway = OpenClawProcessManager.get(context)
+    val started = gateway.start()
+    if (!started.started) "OpenClaw 未就绪：${started.message}" else runCatching {
+        val system = buildString {
+            append(config.mentorPrompt.ifBlank { "你是 Jarvis，运行在 Android 手机上的个人助理。需要访问设备时调用 Jarvis 设备工具，并如实报告结果。" })
+            if (config.worldBook.isNotBlank()) append("\n\n世界书：\n${config.worldBook}")
+            append("\n\n" + com.jarvis.app.runtime.OperationMemory.instructions)
+            append("\n" + memoryStatus)
         }
-    }
-    val effort = normalizeReasoningEffort(config.reasoningEffort)
-    var lastError = "未知错误"
-    for (model in models) {
+        val conversationMessages = JSONArray()
+            .put(JSONObject().put("role", "system").put("content", system))
+        history.takeLast(40).forEach { item ->
+            conversationMessages.put(JSONObject()
+                .put("role", if (item.role == ChatMessageRole.USER) "user" else "assistant")
+                .put("content", item.content))
+        }
+        val request = JSONObject()
+            .put("model", "openclaw")
+            .put("user", "jarvis-local-$conversationId-${history.lastOrNull()?.id.orEmpty()}")
+            .put("stream", false)
+            .put("messages", conversationMessages)
+        val connection = (URL("http://127.0.0.1:18789/v1/chat/completions").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 5_000
+            // Device tasks span multiple model/tool round trips while other apps are open.
+            readTimeout = 15 * 60_000
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer ${gateway.token()}")
+        }
         try {
-            return@withContext requestChatCompletion(
-                baseUrl = baseUrl,
-                apiKey = config.modelApiKey,
-                model = model,
-                messages = JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", system))
-                    .put(JSONObject().put("role", "user").put("content", prompt)),
-                reasoningEffort = if (config.deepThinkingEnabled) effort else "off"
-            )
-        } catch (error: Exception) {
-            lastError = error.message ?: lastError
+            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(request.toString()) }
+            val status = connection.responseCode
+            val response = (if (status in 200..299) connection.inputStream else connection.errorStream)
+                .bufferedReader(Charsets.UTF_8).use { it.readText() }
+            if (status !in 200..299) error("Gateway HTTP $status: ${response.take(240)}")
+            JSONObject(response).optJSONArray("choices")?.optJSONObject(0)
+                ?.optJSONObject("message")?.optString("content")?.takeIf { it.isNotBlank() }
+                ?: error("Gateway 没有返回可显示的内容")
+        } finally {
+            connection.disconnect()
         }
+    }.getOrElse { "OpenClaw 请求失败：${it.message ?: it.javaClass.simpleName}" }
     }
-    "模型请求失败：$lastError"
 }
 
 private suspend fun callVisionModel(config: JarvisConfig, prompt: String, dataUrl: String): String = withContext(Dispatchers.IO) {
@@ -631,12 +808,20 @@ private suspend fun callVisionModel(config: JarvisConfig, prompt: String, dataUr
 private fun MainContent(
     tab: JarvisTab,
     padding: PaddingValues,
-    messages: List<String>,
+    conversationId: String,
+    messages: List<ChatMessage>,
     draft: String,
     sending: Boolean,
     onDraftChange: (String) -> Unit,
     onSend: (String) -> Unit,
+    onNewConversation: () -> Unit,
     onBranch: () -> Unit,
+    onUndoLatest: () -> Unit,
+    onEditLatest: () -> Unit,
+    onCancelEdit: () -> Unit,
+    editingLatest: Boolean,
+    canUndoLatest: Boolean,
+    canEditLatest: Boolean,
     config: JarvisConfig,
     bootstrapReport: BootstrapReport,
     runtimeMessage: String,
@@ -651,7 +836,23 @@ private fun MainContent(
     onExportAiClassroom: () -> Unit
 ) {
     when (tab) {
-        JarvisTab.Chat -> ChatScreen(padding, messages, draft, onDraftChange, sending, onSend, onBranch)
+        JarvisTab.Chat -> ChatScreen(
+            padding = padding,
+            conversationId = conversationId,
+            messages = messages,
+            draft = draft,
+            onDraftChange = onDraftChange,
+            sending = sending,
+            onSend = onSend,
+            onNewConversation = onNewConversation,
+            onBranch = onBranch,
+            onUndoLatest = onUndoLatest,
+            onEditLatest = onEditLatest,
+            onCancelEdit = onCancelEdit,
+            editingLatest = editingLatest,
+            canUndoLatest = canUndoLatest,
+            canEditLatest = canEditLatest
+        )
         JarvisTab.Tasks -> TasksScreen(padding)
         JarvisTab.Workspace -> WorkspaceScreen(padding)
         JarvisTab.Settings -> SettingsScreen(
@@ -676,35 +877,97 @@ private fun MainContent(
 }
 
 @Composable
-private fun SessionRail(tab: JarvisTab, workspace: String, branches: List<ConversationBranch>, onTab: (JarvisTab) -> Unit, onWorkspace: (String) -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier.background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(14.dp)) {
-        Text("Jarvis", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+private fun SessionRail(
+    tab: JarvisTab,
+    workspace: String,
+    conversations: List<ChatSession>,
+    activeConversationId: String,
+    onTab: (JarvisTab) -> Unit,
+    onWorkspace: (String) -> Unit,
+    onSelectConversation: (String) -> Unit,
+    onNewConversation: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val compact = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    Column(modifier.background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(if (compact) 12.dp else 18.dp), horizontalAlignment = Alignment.Start) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = if (compact) 2.dp else 12.dp)) {
+            JarvisBrandMark(size = if (compact) 30 else 42)
+            Spacer(Modifier.width(10.dp))
+            Column(horizontalAlignment = Alignment.Start) {
+                Text("Jarvis", style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (!compact) Text(LocalJarvisTheme.current.story, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(if (compact) 4.dp else 20.dp))
+        if (!compact) Text("工作区", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        TextButton(onClick = { onWorkspace("默认工作区") }, contentPadding = PaddingValues(horizontal = 0.dp, vertical = if (compact) 0.dp else 12.dp), modifier = Modifier.fillMaxWidth().jarvisPressScale()) {
+            Icon(Icons.Default.Home, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(workspace, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(if (compact) 2.dp else 16.dp))
+        if (!compact) Text("导航", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Spacer(Modifier.height(if (compact) 2.dp else 8.dp))
+        JarvisTab.entries.forEach { item ->
+            Surface(color = if (tab == item) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 3.dp)
+                    .jarvisPressScale().clickable(role = androidx.compose.ui.semantics.Role.Tab, onClick = { onTab(item) })) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = if (compact) 8.dp else 13.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start) {
+                    Icon(when (item) { JarvisTab.Chat -> Icons.Default.Chat; JarvisTab.Tasks -> Icons.Default.CheckCircle; JarvisTab.Workspace -> Icons.Default.Home; JarvisTab.Settings -> Icons.Default.Settings }, null,
+                        modifier = Modifier.size(20.dp), tint = if (tab == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(12.dp))
+                    Text(item.label, modifier = Modifier.weight(1f), fontWeight = if (tab == item) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
         Spacer(Modifier.height(16.dp))
-        Text("工作区", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        TextButton(onClick = { onWorkspace("默认工作区") }, modifier = Modifier.fillMaxWidth().jarvisPressScale()) { Text(workspace, modifier = Modifier.weight(1f)) }
-        Spacer(Modifier.height(8.dp))
-        Text("会话", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        JarvisTab.entries.forEach { item -> TextButton(onClick = { onTab(item) }, modifier = Modifier.fillMaxWidth().jarvisPressScale()) { Icon(when (item) { JarvisTab.Chat -> Icons.Default.Chat; JarvisTab.Tasks -> Icons.Default.CheckCircle; JarvisTab.Workspace -> Icons.Default.Home; JarvisTab.Settings -> Icons.Default.Settings }, null); Spacer(Modifier.width(8.dp)); Text(item.label) } }
-        Spacer(Modifier.height(12.dp))
-        Text("分支", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        branches.forEach { branch ->
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(tween(180)) + slideInHorizontally(initialOffsetX = { -it / 5 }, animationSpec = tween(220))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("對話", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = onNewConversation, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), modifier = Modifier.jarvisPressScale()) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("新建", fontSize = 12.sp)
+            }
+        }
+        conversations.take(30).forEach { conversation ->
+            val selected = conversation.id == activeConversationId && tab == JarvisTab.Chat
+            Surface(
+                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                    .clickable { onSelectConversation(conversation.id) }
             ) {
-                Text(branch.title, modifier = Modifier.padding(vertical = 6.dp), fontSize = 13.sp)
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                    Text(conversation.title, maxLines = 1, fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    val preview = conversation.messages.lastOrNull()?.content.orEmpty()
+                    if (preview.isNotBlank()) Text(preview, maxLines = 1, fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun VerticalDivider() { Box(Modifier.width(1.dp).fillMaxSize().background(MaterialTheme.colorScheme.outlineVariant)) }
+private fun VerticalDivider() { Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant)) }
 
 @Composable
-private fun NavigationDrawerOverlay(tab: JarvisTab, workspace: String, onTab: (JarvisTab) -> Unit, onWorkspace: (String) -> Unit, onDismiss: () -> Unit) {
+private fun NavigationDrawerOverlay(
+    tab: JarvisTab,
+    workspace: String,
+    conversations: List<ChatSession>,
+    activeConversationId: String,
+    onTab: (JarvisTab) -> Unit,
+    onWorkspace: (String) -> Unit,
+    onSelectConversation: (String) -> Unit,
+    onNewConversation: () -> Unit,
+    onDismiss: () -> Unit
+) {
     Row(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f))) {
-        SessionRail(tab, workspace, listOf(ConversationBranch("主对话", emptyList())), onTab, onWorkspace, Modifier.widthIn(max = 300.dp).fillMaxHeight())
+        SessionRail(tab, workspace, conversations, activeConversationId, onTab, onWorkspace,
+            onSelectConversation, onNewConversation, Modifier.widthIn(max = 300.dp).fillMaxHeight())
         Spacer(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onDismiss))
     }
 }
@@ -757,44 +1020,105 @@ private fun requestChatCompletion(
 @Composable
 private fun ChatScreen(
     padding: PaddingValues,
-    messages: List<String>,
+    conversationId: String,
+    messages: List<ChatMessage>,
     draft: String,
     onDraftChange: (String) -> Unit,
     sending: Boolean,
     onSend: (String) -> Unit,
-    onBranch: () -> Unit = {}
+    onNewConversation: () -> Unit = {},
+    onBranch: () -> Unit = {},
+    onUndoLatest: () -> Unit = {},
+    onEditLatest: () -> Unit = {},
+    onCancelEdit: () -> Unit = {},
+    editingLatest: Boolean = false,
+    canUndoLatest: Boolean = false,
+    canEditLatest: Boolean = false
 ) {
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp)) {
+    val listState = rememberLazyListState()
+    var showConversationMenu by remember { mutableStateOf(false) }
+    val welcome = messages.isEmpty()
+    val compact = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    LaunchedEffect(conversationId, messages.size) {
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.Start) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("对话", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("需要规划时，Jarvis 会先判断是否使用工作区。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text("撤销移除上一轮聊天记录；已经执行的设备操作不会回滚。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
-            IconButton(onClick = onBranch, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Add, contentDescription = "创建分支") }
+            TextButton(onClick = if (editingLatest) onCancelEdit else onEditLatest,
+                enabled = !sending && (editingLatest || canEditLatest),
+                contentPadding = PaddingValues(horizontal = 4.dp), modifier = Modifier.jarvisPressScale()) {
+                Icon(if (editingLatest) Icons.Default.Close else Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text(if (editingLatest) "取消" else "编辑", fontSize = 12.sp)
+            }
+            TextButton(onClick = onUndoLatest, enabled = canUndoLatest, contentPadding = PaddingValues(horizontal = 4.dp), modifier = Modifier.jarvisPressScale()) {
+                Icon(Icons.Default.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
+                Text("撤销", fontSize = 12.sp)
+            }
+            Box {
+                IconButton(onClick = { showConversationMenu = true }, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Add, contentDescription = "新建对话或分支") }
+                DropdownMenu(expanded = showConversationMenu, onDismissRequest = { showConversationMenu = false }) {
+                    DropdownMenuItem(text = { Text("新建对话") }, onClick = { showConversationMenu = false; onNewConversation() })
+                    DropdownMenuItem(text = { Text("从当前对话创建分支") }, onClick = { showConversationMenu = false; onBranch() })
+                }
+            }
         }
         Spacer(Modifier.height(8.dp))
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(messages) { message ->
+        LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)) {
+            if (welcome) {
+                item {
+                    ThemeIllustration("让想法，\n开始行动。", "交给 Jarvis，逐步完成。", compact = compact)
+                    Spacer(Modifier.height(18.dp))
+                    Text("从一个小任务开始", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            Triple(Icons.Default.Tune, "手机状态", "查询本机手机型号、系统版本和当前设备状态。"),
+                            Triple(Icons.Default.Home, "打开应用", "帮我打开一个应用，请先问我要打开哪个。"),
+                            Triple(Icons.Default.Build, "操作记忆", "查看已保存的操作路径，告诉我有哪些可以复用。")
+                        ).forEach { (icon, title, prompt) ->
+                            OutlinedButton(onClick = { onDraftChange(prompt) }, modifier = Modifier.jarvisPressScale()) {
+                                Icon(icon, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text(title)
+                            }
+                        }
+                    }
+                }
+            }
+            items(if (welcome) emptyList() else messages, key = { it.id }) { message ->
                 AnimatedVisibility(visible = true, enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.96f, animationSpec = tween(220))) {
-                    val isUser = message.startsWith("你：")
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
-                        Surface(color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(12.dp), tonalElevation = if (isUser) 0.dp else 1.dp, modifier = Modifier.widthIn(max = 760.dp)) {
-                            Text(message.removePrefix("你：").removePrefix("Jarvis："), modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp), color = MaterialTheme.colorScheme.onSurface)
+                    val isUser = message.role == ChatMessageRole.USER
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                        Text(if (isUser) "你" else "Jarvis", modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Surface(color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.widthIn(max = 760.dp)) {
+                            Text(message.content, modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp), color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 }
             }
         }
-        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(18.dp), tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        if (editingLatest) {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("正在修改上一条；发送后才会替换原对话轮次。", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+            }
+        }
+        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             OutlinedTextField(
                 value = draft,
                 onValueChange = onDraftChange,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("给 Jarvis 发消息，或描述一个任务…") },
+                placeholder = { Text(if (editingLatest) "修改上一条消息后重新发送…" else "给 Jarvis 发消息，或描述一个任务…") },
                 maxLines = 4
             )
-            IconButton(onClick = { onSend(draft.trim()) }, enabled = !sending, modifier = Modifier.padding(start = 6.dp).size(52.dp).jarvisPressScale()) {
+            IconButton(onClick = { onSend(draft.trim()) }, enabled = !sending && draft.isNotBlank(), modifier = Modifier.padding(start = 6.dp).size(52.dp).jarvisPressScale()) {
                 Icon(Icons.Default.Send, contentDescription = "发送", tint = MaterialTheme.colorScheme.primary)
             }
         }
@@ -805,16 +1129,142 @@ private fun ChatScreen(
 
 @Composable
 private fun TasksScreen(padding: PaddingValues) {
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val manager = remember(context) { com.jarvis.app.runtime.AutomationManager(context) }
+    var rules by remember { mutableStateOf(manager.list()) }
+    var events by remember { mutableStateOf(manager.recentEvents()) }
+    var notice by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<AutomationRule?>(null) }
+    var artistDraft by remember { mutableStateOf("") }
+    var replyDraft by remember { mutableStateOf("") }
+    var notificationAccess by remember { mutableStateOf(manager.hasNotificationAccess()) }
+    var accessibilityReady by remember { mutableStateOf(AccessibilityController.service != null) }
+
+    fun refresh() {
+        rules = manager.list()
+        events = manager.recentEvents()
+        notificationAccess = manager.hasNotificationAccess()
+        accessibilityReady = AccessibilityController.service != null
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            refresh()
+            kotlinx.coroutines.delay(1200)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.Start) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("任务", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("挂机、自动化和后台任务会在这里显示。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("自动化", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text("通过对话创建，收到通知后按规则执行一次。", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { }, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Add, contentDescription = "新建任务") }
+            IconButton(onClick = { refresh() }, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Tune, contentDescription = "刷新自动化") }
         }
-        Spacer(Modifier.height(14.dp))
-        EmptyState(Icons.Default.CheckCircle, "还没有任务", "先在对话中描述一个任务，Jarvis 会生成可审核的执行计划。")
+        Spacer(Modifier.height(10.dp))
+        Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp)) {
+                Text("运行前检查", fontWeight = FontWeight.SemiBold)
+                Text("通知访问：${if (notificationAccess) "已授权" else "未授权"} · 无障碍：${if (accessibilityReady) "已连接" else "未连接"}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("规则默认暂停；启用后只匹配目标应用通知，并在完成后核实结果。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    if (!notificationAccess) OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, modifier = Modifier.jarvisPressScale()) { Text("授权通知") }
+                    if (!accessibilityReady) OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, modifier = Modifier.jarvisPressScale()) { Text("开启无障碍") }
+                }
+            }
+        }
+        if (notice.isNotBlank()) {
+            Text(notice, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        if (rules.isEmpty()) {
+            EmptyState(Icons.Default.CheckCircle, "还没有自动化", "在对话中输入“当哔哩哔哩上有人回复我就立刻回复”或“当 Pixiv 画师发布新作品就立刻下载”。")
+        } else {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                rules.forEach { rule ->
+                    AutomationRuleCard(rule, onEdit = {
+                        editing = rule
+                        artistDraft = rule.artist
+                        replyDraft = rule.replyInstruction
+                    }, readiness = if (rule.enabled) null else manager.readiness(rule), onToggle = { enabled ->
+                        runCatching { manager.setEnabled(rule.id, enabled) }
+                            .onSuccess { notice = if (enabled) "已启用“${rule.title}”" else "已暂停“${rule.title}”"; refresh() }
+                            .onFailure { notice = "无法启用：${it.message ?: "请先完成权限和配置"}" }
+                    }, onDelete = {
+                        manager.delete(rule.id)
+                        notice = "已删除自动化规则"
+                        refresh()
+                    })
+                }
+                if (events.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("最近执行", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    events.take(8).forEach { event ->
+                        val ok = event.optBoolean("ok")
+                        Text("${if (ok) "✓" else "!"} ${event.optString("title")} · ${event.optString("message")}", fontSize = 12.sp, color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
+            }
+        }
+    }
+
+    editing?.let { rule ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text("配置自动化") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(rule.title, fontWeight = FontWeight.SemiBold)
+                    Text("原始要求：${rule.sourcePrompt}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (rule.kind == AutomationKind.PIXIV_NEW_WORK) {
+                        OutlinedTextField(value = artistDraft, onValueChange = { artistDraft = it }, singleLine = true, label = { Text("Pixiv 画师名称或用户 ID") })
+                    }
+                    if (rule.kind == AutomationKind.BILIBILI_REPLY) {
+                        OutlinedTextField(value = replyDraft, onValueChange = { replyDraft = it }, minLines = 2, label = { Text("回复风格要求") })
+                    }
+                    Text("启用前还需要目标应用通知访问和 Jarvis 无障碍服务。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    runCatching { manager.update(rule.copy(artist = artistDraft.trim(), replyInstruction = replyDraft.trim())) }
+                        .onSuccess { notice = "配置已保存；规则仍保持暂停，请检查后启用"; editing = null; refresh() }
+                        .onFailure { notice = "保存失败：${it.message}" }
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable
+private fun AutomationRuleCard(
+    rule: AutomationRule,
+    onEdit: () -> Unit,
+    readiness: String?,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(rule.title, fontWeight = FontWeight.SemiBold)
+                    Text(rule.kind.label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = rule.enabled, onCheckedChange = onToggle, modifier = Modifier.jarvisPressScale())
+            }
+            Text(if (rule.enabled) "已启用 · 等待目标应用通知" else "已暂停 · 不会自动操作", fontSize = 13.sp, color = if (rule.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            if (rule.kind == AutomationKind.PIXIV_NEW_WORK) Text("画师：${rule.artist.ifBlank { "未配置" }}", fontSize = 12.sp)
+            if (!rule.enabled && readiness != null) Text("启用前：$readiness", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            if (rule.lastResult.isNotBlank()) Text("最近结果：${rule.lastResult}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 6.dp)) {
+                TextButton(onClick = onEdit, modifier = Modifier.jarvisPressScale()) { Text("配置") }
+                TextButton(onClick = onDelete, modifier = Modifier.jarvisPressScale()) { Text("删除") }
+            }
+        }
     }
 }
 
@@ -854,8 +1304,8 @@ private fun RuntimeStatusCard(
         RuntimeState.ERROR -> "配置错误"
     }
     val statusColor = when (report.state) {
-        RuntimeState.READY, RuntimeState.RUNNING -> Color(0xFF2E7D5B)
-        RuntimeState.DEGRADED -> Color(0xFF9A6A18)
+        RuntimeState.READY, RuntimeState.RUNNING -> MaterialTheme.colorScheme.primary
+        RuntimeState.DEGRADED -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> MaterialTheme.colorScheme.error
     }
     SettingsCard(Icons.Default.Code, "OpenClaw 运行时", "单 APK 运行目录和插件目录状态") {
@@ -885,6 +1335,458 @@ private fun RuntimeStatusCard(
             Spacer(Modifier.width(8.dp))
             Text("运行时修复 / Termux 备用方案")
         }
+    }
+}
+
+@Composable
+private fun ConfigurationActions(config: JarvisConfig) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val latestConfig by rememberUpdatedState(config)
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf("") }
+    var failed by remember { mutableStateOf(false) }
+
+    fun applyConfiguration(verify: Boolean) {
+        val snapshot = config
+        val saved = runCatching { ConfigStore(context).save(snapshot, durable = true) }.getOrDefault(false)
+        if (!saved) {
+            failed = true
+            notice = "保存失败，请检查手机存储空间后重试。"
+            return
+        }
+        busy = true
+        failed = false
+        notice = "配置已保存，正在应用到 OpenClaw…"
+        scope.launch {
+            try {
+                val started = OpenClawProcessManager.get(context).start()
+                if (!started.started) {
+                    failed = true
+                    notice = "配置已保存；OpenClaw 尚未就绪：${started.message}"
+                } else if (verify) {
+                    notice = "配置已应用，正在验证主模型连接…"
+                    val result = withContext(Dispatchers.IO) {
+                        val selectedModel = if (snapshot.deepThinkingEnabled) snapshot.deepThinkingModel.ifBlank { snapshot.modelName } else snapshot.modelName
+                        ModelConnectionChecker.test(snapshot.modelBaseUrl, snapshot.modelApiKey, selectedModel)
+                    }
+                    failed = !result.ok
+                    notice = "配置已保存并应用。${result.message}"
+                } else {
+                    notice = "配置已保存并应用，OpenClaw 已就绪。"
+                }
+                if (latestConfig != snapshot) notice += " 检测到新的修改，请再次保存并应用。"
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                failed = true
+                notice = "配置已保存；应用配置失败，请重新启动 Gateway 后重试。"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { applyConfiguration(false) }, enabled = !busy, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("保存并应用") }
+            OutlinedButton(onClick = { applyConfiguration(true) }, enabled = !busy, modifier = Modifier.weight(1f).jarvisPressScale()) { Text(if (busy) "处理中…" else "保存并验证") }
+        }
+        Text(
+            notice.ifBlank { "编辑内容自动保存在本机；保存并应用可更新智能体。验证会发起一次简短的主模型请求。" },
+            color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun OperationMemoryCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf("正在读取操作记忆…") }
+    var routes by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    fun refresh(action: String = "list", id: String = "") {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val bridge = com.jarvis.app.runtime.DeviceCapabilityBridge(context)
+                    fun call(args: JSONObject) = bridge.execute(com.jarvis.app.runtime.CapabilityRequest(
+                        "operation.memory", args, com.jarvis.app.runtime.CapabilityRisk.LOW, false))
+                    if (action == "forget") call(JSONObject().put("action", action).put("id", id))
+                    val data = call(JSONObject().put("action", "list")).data.optJSONArray("recipes") ?: JSONArray()
+                    com.jarvis.app.runtime.OperationMemory.at(context.filesDir).summary() to
+                        (0 until data.length()).map { data.getJSONObject(it) }
+                }
+            }
+            result.onSuccess { status = it.first; routes = it.second }
+                .onFailure { status = "读取失败：${it.message}" }
+        }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            refresh()
+            delay(1000)
+        }
+    }
+    SettingsCard(Icons.Default.Build, "操作记忆", "首次成功后学习，后续优先复用；失败时重新探索") {
+        Text(status, fontSize = 13.sp)
+        Text("保存在本机，重装内置运行时仍保留。可在对话中要求查看、更新或删除路径。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { refresh() }) { Text("刷新操作路径") }
+        routes.forEach { route ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(route.optString("title"), fontSize = 14.sp)
+                    Text("${if (route.optString("status") == "ready") "可复用" else "已失效，待重新学习"} · 成功 ${route.optInt("successes")} / 失败 ${route.optInt("failures")}", fontSize = 12.sp)
+                }
+                TextButton(onClick = { refresh("forget", route.getString("id")) }) { Text("删除") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccessibilityControlCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val manager = remember(context) { AccessibilityStartupManager(context) }
+    val scope = rememberCoroutineScope()
+    var autoConnect by remember { mutableStateOf(manager.autoConnect) }
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+
+    fun refresh() {
+        status = when {
+            AccessibilityController.service != null -> "无障碍已连接，可以操作当前屏幕"
+            manager.isEnabled() -> "系统已启用无障碍，等待服务连接"
+            else -> "无障碍未启用"
+        }
+    }
+    LaunchedEffect(Unit) { refresh() }
+
+    SettingsCard(Icons.Default.Tune, "屏幕操作", "读取界面、输入中文和执行点击；自动连接需 root 完全模式") {
+        Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        Spacer(Modifier.height(8.dp))
+        SettingSwitch("打开 Jarvis 时自动连接", "需要 root 完全模式；关闭此项不会撤销已有授权", autoConnect) {
+            autoConnect = it
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                manager.autoConnect = autoConnect
+                status = if (autoConnect) "已保存，正在连接…" else "已保存；下次打开时不自动连接"
+                if (autoConnect) scope.launch {
+                    busy = true
+                    status = withContext(Dispatchers.IO) { manager.connectWithRoot() }
+                    busy = false
+                }
+            }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("保存") }
+            OutlinedButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }, modifier = Modifier.jarvisPressScale()) { Text("手动授权") }
+            TextButton(onClick = ::refresh, modifier = Modifier.jarvisPressScale()) { Text("刷新") }
+        }
+    }
+}
+
+@Composable
+private fun RemoteAccessCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val manager = remember(context) { com.jarvis.app.runtime.RemoteAccessManager(context) }
+    var enabled by remember { mutableStateOf(manager.enabled) }
+    var deviceControl by remember { mutableStateOf(manager.remoteDeviceControl) }
+    var pairing by remember { mutableStateOf(manager.currentPairingInfo()) }
+    var urls by remember { mutableStateOf(manager.localUrls()) }
+    var notice by remember { mutableStateOf("") }
+
+    fun syncService() {
+        val intent = Intent(context, JarvisBridgeService::class.java).setAction(JarvisBridgeService.ACTION_SYNC_REMOTE)
+        runCatching { ContextCompat.startForegroundService(context, intent) }
+            .onFailure { notice = "服务同步失败：${it.message ?: "请重新打开 Jarvis"}" }
+    }
+
+    SettingsCard(Icons.Default.Code, "远程连接", "通过局域网或 Tailscale 访问网页控制台，不镜像屏幕也不发送远程触控") {
+        SettingSwitch("启用远程网页控制台", "默认关闭；只允许已配对的浏览器提交任务", enabled) {
+            enabled = it
+            manager.enabled = it
+            if (!it) {
+                manager.remoteDeviceControl = false
+                deviceControl = false
+                manager.revoke()
+                pairing = null
+                notice = "远程连接已关闭，已有配对令牌已失效"
+            } else {
+                pairing = manager.newPairingCode()
+                urls = manager.localUrls()
+                notice = "远程连接已开启，请在 5 分钟内完成配对"
+            }
+            syncService()
+        }
+        AnimatedVisibility(visible = enabled, enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.98f, animationSpec = tween(180)), exit = fadeOut(tween(120))) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (pairing != null) {
+                    Text("一次性配对码", fontWeight = FontWeight.SemiBold)
+                    Text(pairing!!.code, style = MaterialTheme.typography.headlineMedium, letterSpacing = 5.sp, color = MaterialTheme.colorScheme.primary)
+                    Text("有效至 ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(pairing!!.expiresAt))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text("还没有配对码，点击下方生成。", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                OutlinedButton(onClick = {
+                    pairing = manager.newPairingCode()
+                    urls = manager.localUrls()
+                    notice = "已生成新的 5 分钟配对码，旧码已失效"
+                }, modifier = Modifier.jarvisPressScale()) { Text("生成新配对码") }
+                SettingSwitch("允许远程设备操作", "关闭时远程端只能对话和整理计划，不会调用无障碍、相机、应用启动或 root 工具", deviceControl) {
+                    deviceControl = it
+                    manager.remoteDeviceControl = it
+                    notice = if (it) "已允许远程任务调用设备能力" else "已禁止远程任务调用设备能力"
+                }
+                if (urls.isNotEmpty()) {
+                    Text("在同一网络设备打开：", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    urls.forEach { Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp) }
+                } else {
+                    Text("暂未发现局域网或 Tailscale 地址；确认手机已连接网络后刷新。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { urls = manager.localUrls(); notice = "地址已刷新" }, modifier = Modifier.jarvisPressScale()) { Text("刷新地址") }
+                    TextButton(onClick = {
+                        manager.revoke()
+                        pairing = null
+                        notice = "已撤销所有远程配对，现有浏览器会立即失效"
+                    }, modifier = Modifier.jarvisPressScale()) { Text("撤销配对") }
+                }
+                Text("不要在路由器上做端口映射。Tailscale 请使用手机显示的 100.x 地址；远程任务会和手机本机任务排队，不会同时驱动无障碍服务。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+        }
+        if (notice.isNotBlank()) Text(notice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+    }
+}
+
+private fun parseGeneratedPlugin(raw: String): GeneratedOpenClawPlugin {
+    val trimmed = raw.trim()
+        .removePrefix("```json").removePrefix("```JSON").removePrefix("```")
+        .removeSuffix("```").trim()
+    val start = trimmed.indexOf('{')
+    val end = trimmed.lastIndexOf('}')
+    require(start >= 0 && end > start) { "Jarvis 没有返回有效 JSON 插件草稿" }
+    val json = JSONObject(trimmed.substring(start, end + 1))
+    val tools = json.optJSONArray("tools") ?: JSONArray()
+    val toolNames = (0 until tools.length()).map { tools.optString(it) }.filter { it.isNotBlank() }
+    return GeneratedOpenClawPlugin(
+        id = json.optString("id").lowercase().trim(),
+        name = json.optString("name").trim(),
+        version = json.optString("version", "1.0.0").trim(),
+        description = json.optString("description").trim(),
+        tools = toolNames,
+        source = json.optString("source")
+    )
+}
+
+@Composable
+private fun CommunityPluginsCard(config: JarvisConfig) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val manager = remember(context) { CommunityPluginManager(context) }
+    val scope = rememberCoroutineScope()
+    var plugins by remember { mutableStateOf<List<ManagedOpenClawPlugin>>(emptyList()) }
+    var generatedDraft by remember { mutableStateOf<GeneratedOpenClawPlugin?>(null) }
+    var request by remember { mutableStateOf("") }
+    var notice by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var pendingEnable by remember { mutableStateOf<ManagedOpenClawPlugin?>(null) }
+    var pendingRemove by remember { mutableStateOf<ManagedOpenClawPlugin?>(null) }
+
+    fun refresh() {
+        scope.launch { plugins = withContext(Dispatchers.IO) { manager.list() } }
+    }
+
+    fun setPluginEnabled(plugin: ManagedOpenClawPlugin, enabled: Boolean) {
+        scope.launch {
+            busy = true
+            val outcome = runCatching {
+                val result = DeviceTaskCoordinator.run("加载插件") {
+                    withContext(Dispatchers.IO) { manager.setEnabled(plugin.id, enabled) }
+                    OpenClawProcessManager.get(context).start()
+                }
+                plugins = withContext(Dispatchers.IO) { manager.list() }
+                if (result.started) {
+                    if (enabled) "${plugin.name} 已启用，OpenClaw Gateway 已重载。"
+                    else "${plugin.name} 已停用，OpenClaw Gateway 已重载。"
+                } else {
+                    "插件状态已保存；Gateway 重载失败：${result.message}"
+                }
+            }
+            outcome.onSuccess { notice = it }.onFailure { notice = "插件状态更新失败：${it.message ?: "未知错误"}" }
+            busy = false
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            busy = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use(manager::installArchive)
+                        ?: error("无法读取插件压缩包")
+                }
+            }
+            result.onSuccess {
+                plugins = withContext(Dispatchers.IO) { manager.list() }
+                notice = "已导入 ${it.name} ${it.version}；插件当前停用，审阅后再启用。"
+            }.onFailure { notice = "插件导入失败：${it.message ?: "压缩包格式不支持"}" }
+            busy = false
+        }
+    }
+
+    fun generateDraft() {
+        if (request.isBlank()) {
+            notice = "先描述你想添加的插件功能。"
+            return
+        }
+        if (config.modelBaseUrl.isBlank() || config.modelName.isBlank()) {
+            notice = "请先在“模型连接”中配置主模型。"
+            return
+        }
+        busy = true
+        notice = "Jarvis 正在编写插件草稿…"
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val prompt = buildString {
+                        appendLine("根据以下功能需求生成一个 Jarvis 可安装的 OpenClaw JavaScript 插件草稿。")
+                        appendLine("需求：${request.trim().take(1200)}")
+                        appendLine("只输出一个 JSON 对象，不要 Markdown 或解释，字段为 id、name、version、description、tools（字符串数组）、source（完整 ESM 源码字符串）。")
+                        appendLine("id 使用 3–40 位小写字母/数字/短横线，必须以小写字母开头；version 用 1.0.0 形式。tools 至少一个，每个工具名以小写字母开头，只含小写字母、数字和下划线。")
+                        appendLine("源码必须 export default 一个 { id, name, register(api) } 插件。每个工具按 api.registerTool(() => ({name,label,description,parameters,execute}), {name}) 注册；parameters 使用 JSON Schema，execute 返回 {content:[{type:'text',text:'结果'}]}。")
+                        appendLine("生成纯 JavaScript 工具。不要使用 eval、Function、require、process、文件系统、子进程、网络请求、Android/root/无障碍 API；不要内置密钥、自动发送消息、发布内容或执行破坏操作。工具名必须与 tools 数组完全一致。")
+                        appendLine("参考结构：export default { id:'sample-tool', name:'Sample Tool', register(api) { api.registerTool(() => ({ name:'sample_tool', label:'Sample Tool', description:'...', parameters:{type:'object',additionalProperties:false,properties:{}}, execute:async (_id,args)=>({content:[{type:'text',text:'...'}]}) }), {name:'sample_tool'}); } };")
+                    }
+                    val messages = JSONArray()
+                        .put(JSONObject().put("role", "system").put("content", "你是 Jarvis 的 OpenClaw 插件开发器。输出符合用户要求的 JSON 插件草稿，源码需可读、最小化并只实现所描述的功能。"))
+                        .put(JSONObject().put("role", "user").put("content", prompt))
+                    val response = requestChatCompletion(
+                        config.modelBaseUrl, config.modelApiKey,
+                        config.deepThinkingModel.takeIf { config.deepThinkingEnabled && it.isNotBlank() } ?: config.modelName,
+                        messages,
+                        if (config.deepThinkingEnabled) config.reasoningEffort else "off"
+                    )
+                    parseGeneratedPlugin(response)
+                }
+            }
+            result.onSuccess {
+                generatedDraft = it
+                notice = "草稿已生成。检查插件标识、工具清单和源码，再手动安装；安装后仍默认停用。"
+            }.onFailure { notice = "生成失败：${it.message ?: "请检查模型连接"}" }
+            busy = false
+        }
+    }
+
+    LaunchedEffect(Unit) { refresh() }
+
+    SettingsCard(Icons.Default.Extension, "插件管理", "导入 OpenClaw 插件 ZIP，或让 Jarvis 按需求生成源码草稿") {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*")) },
+                enabled = !busy, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("导入插件 ZIP") }
+            OutlinedButton(onClick = { refresh() }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("刷新") }
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = request,
+            onValueChange = { request = it.take(1200) },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            label = { Text("描述插件功能") },
+            placeholder = { Text("例如：提供一个把用户输入整理成待办清单的工具") }
+        )
+        Button(onClick = ::generateDraft, enabled = !busy, modifier = Modifier.padding(top = 8.dp).jarvisPressScale()) {
+            Text(if (busy) "处理中…" else "让 Jarvis 编写插件草稿")
+        }
+        if (generatedDraft != null) {
+            val draft = generatedDraft!!
+            Spacer(Modifier.height(12.dp))
+            Text("插件草稿（安装前可编辑）", fontWeight = FontWeight.SemiBold)
+            Text("ID：${draft.id}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Text("${draft.name} · ${draft.version} · 工具：${draft.tools.joinToString().ifBlank { "未识别" }}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(value = draft.source, onValueChange = { generatedDraft = draft.copy(source = it) },
+                modifier = Modifier.fillMaxWidth(), minLines = 8, maxLines = 20, label = { Text("JavaScript 源码") })
+            Text("源码会在手机内置 OpenClaw Gateway 进程中运行。导入或生成的代码都应先审阅；启用插件前会再次确认。", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    scope.launch {
+                        busy = true
+                        val install = withContext(Dispatchers.IO) { runCatching { manager.installGenerated(draft) } }
+                        install.onSuccess {
+                            plugins = withContext(Dispatchers.IO) { manager.list() }
+                            generatedDraft = null
+                            notice = "${it.name} 已安装并保持停用。审阅后可在下方启用。"
+                        }.onFailure { notice = "安装失败：${it.message ?: "插件草稿无效"}" }
+                        busy = false
+                    }
+                }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("安装草稿（保持停用）") }
+                TextButton(onClick = { generatedDraft = null }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("丢弃") }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        if (plugins.isEmpty()) {
+            Text("还没有安装用户插件。导入包需在 ZIP 根目录包含 openclaw.plugin.json、package.json 和 JavaScript 入口文件。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            plugins.forEach { plugin ->
+                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(plugin.name, fontWeight = FontWeight.SemiBold)
+                            Text("${plugin.id} · v${plugin.version}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = plugin.enabled, onCheckedChange = { enabled ->
+                            if (enabled) pendingEnable = plugin else setPluginEnabled(plugin, false)
+                        }, enabled = !busy)
+                    }
+                    if (plugin.description.isNotBlank()) Text(plugin.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("工具：${plugin.tools.joinToString().ifBlank { "未声明" }} · 来源：${if (plugin.source == "generated") "Jarvis 生成" else "本机导入"}", fontSize = 11.sp)
+                    TextButton(onClick = { pendingRemove = plugin }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("卸载") }
+                }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        }
+        if (notice.isNotBlank()) Text(notice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+    }
+
+    pendingEnable?.let { plugin ->
+        AlertDialog(
+            onDismissRequest = { pendingEnable = null },
+            title = { Text("启用插件？") },
+            text = { Text("${plugin.name} 的 JavaScript 将与 OpenClaw Gateway 在同一进程运行。第三方插件可能联网、读取 Gateway 环境数据，并调用 Gateway 已有设备能力（包括当前配置允许的 root 能力）。Jarvis 无法提供进程级沙箱；请确认已审阅来源和源码。") },
+            confirmButton = { Button(onClick = { pendingEnable = null; setPluginEnabled(plugin, true) }) { Text("我已审阅，启用") } },
+            dismissButton = { TextButton(onClick = { pendingEnable = null }) { Text("取消") } }
+        )
+    }
+    pendingRemove?.let { plugin ->
+        AlertDialog(
+            onDismissRequest = { pendingRemove = null },
+            title = { Text("卸载 ${plugin.name}？") },
+            text = { Text("将删除本机插件文件，并重载 OpenClaw Gateway。") },
+            confirmButton = {
+                Button(onClick = {
+                    pendingRemove = null
+                    scope.launch {
+                        busy = true
+                        val result = runCatching {
+                            DeviceTaskCoordinator.run("卸载插件") {
+                                withContext(Dispatchers.IO) { manager.remove(plugin.id) }
+                                OpenClawProcessManager.get(context).start()
+                            }
+                        }
+                        if (result.isSuccess) {
+                            plugins = withContext(Dispatchers.IO) { manager.list() }
+                            val reload = result.getOrThrow()
+                            notice = if (reload.started) "已卸载 ${plugin.name} 并重载 Gateway。" else "插件已卸载；Gateway 重载失败：${reload.message}"
+                        } else notice = "卸载失败：${result.exceptionOrNull()?.message}"
+                        busy = false
+                    }
+                }) { Text("卸载") }
+            },
+            dismissButton = { TextButton(onClick = { pendingRemove = null }) { Text("取消") } }
+        )
     }
 }
 
@@ -937,21 +1839,30 @@ private fun SettingsScreen(
 
     LaunchedEffect(Unit) { refreshTools() }
 
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.Start) {
         Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("先配置基础策略，再逐步接入模型、QQ 和设备工具。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
-        LazyColumn(modifier = Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+        Text("Jarvis ${BuildConfig.VERSION_NAME} · 模型、权限与设备连接", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item { ConfigurationActions(config) }
+            item { AccessibilityControlCard() }
+            item { RemoteAccessCard() }
+            item {
+                SettingsCard(Icons.Default.Tune, "风格与外观", "图片与控件同步切换，每套主题使用统一色系", saveConfig = config) {
+                    ThemePicker(config.theme, onThemeChange)
+                }
+            }
             item {
                 RuntimeStatusCard(bootstrapReport, onRefreshRuntime, runtimeMessage, onRecovery, onStartRuntime, onStopRuntime)
             }
+            item { OperationMemoryCard() }
             item {
-                SettingsCard(Icons.Default.Shield, "限制模式", "默认开启，控制高风险内容和动作") {
+                SettingsCard(Icons.Default.Shield, "限制模式", "默认开启，控制高风险内容和动作", saveConfig = config) {
                     SettingSwitch("限制模式", "关闭后会持续显示警告状态", config.restrictionMode, onRestrictionChange)
                 }
             }
             item {
-                SettingsCard(Icons.Default.Lock, "root 模式", "完全模式会在启用前显示三秒警告") {
+                SettingsCard(Icons.Default.Lock, "root 模式", "完全模式会在启用前显示三秒警告", saveConfig = config) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         RootMode.entries.forEach { mode ->
                             FilterChip(
@@ -967,7 +1878,7 @@ private fun SettingsScreen(
                 }
             }
             item {
-                SettingsCard(Icons.Default.Terminal, "QQ 命令通道", "指定会话可发送 /claw 命令，其余消息走普通人格") {
+                SettingsCard(Icons.Default.Terminal, "QQ 命令通道", "指定会话可发送 /claw 命令，其余消息走普通人格", saveConfig = config) {
                     SettingSwitch("启用命令通道", "首版默认只做预览，不直接执行", config.commandChannelEnabled, onCommandChange)
                     AnimatedVisibility(visible = config.commandChannelEnabled, enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.98f, animationSpec = tween(180)), exit = fadeOut(tween(120))) {
                         OutlinedTextField(
@@ -981,7 +1892,7 @@ private fun SettingsScreen(
                 }
             }
             item {
-                SettingsCard(Icons.Default.Build, "模型连接", "兼容 OpenAI Chat Completions 的服务") {
+                SettingsCard(Icons.Default.Build, "模型连接", "兼容 OpenAI Chat Completions 的服务", saveConfig = config, applyGateway = true) {
                     OutlinedTextField(
                         value = config.modelBaseUrl,
                         onValueChange = onModelBaseUrlChange,
@@ -1054,7 +1965,7 @@ private fun SettingsScreen(
                 }
             }
             item {
-                SettingsCard(Icons.Default.DarkMode, "识图模型", "用于相机取样、截图和多模态任务，兼容 OpenAI image_url 格式") {
+                SettingsCard(Icons.Default.DarkMode, "识图模型", "用于相机取样、截图和多模态任务，兼容 OpenAI image_url 格式", saveConfig = config) {
                     OutlinedTextField(
                         value = config.visionBaseUrl,
                         onValueChange = onVisionBaseUrlChange,
@@ -1099,7 +2010,7 @@ private fun SettingsScreen(
                 }
             }
             item {
-                SettingsCard(Icons.Default.Chat, "全局人格与世界书", "作为所有工作区的默认提示；工作区覆盖能力会在后续工作区编辑器中接入") {
+                SettingsCard(Icons.Default.Chat, "全局人格与世界书", "作为所有工作区的默认提示；工作区覆盖能力会在后续工作区编辑器中接入", saveConfig = config) {
                     OutlinedTextField(
                         value = config.mentorPrompt,
                         onValueChange = onMentorPromptChange,
@@ -1118,16 +2029,10 @@ private fun SettingsScreen(
                 }
             }
             item {
-                SettingsCard(Icons.Default.Tune, "风格与外观", "切换界面色调；人格风格仍由提示词和工作区控制") {
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        JarvisTheme.entries.forEach { theme ->
-                            FilterChip(selected = config.theme == theme, onClick = { onThemeChange(theme) }, modifier = Modifier.jarvisPressScale(), label = { Text(theme.label) })
-                        }
-                    }
-                }
+                CommunityPluginsCard(config)
             }
             item {
-                SettingsCard(Icons.Default.Extension, "基础插件", "检查内置运行时、系统/root 和 Termux 中的工具") {
+                SettingsCard(Icons.Default.Extension, "运行时工具", "检查内置运行时、系统/root 和 Termux 中的命令行工具") {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text("工具状态", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                         TextButton(onClick = { refreshTools(); toolNotice = "正在检查工具路径" }, enabled = !checkingTools, modifier = Modifier.jarvisPressScale()) { Text("刷新") }
@@ -1201,19 +2106,86 @@ private fun RuntimeRecoveryDialog(
 }
 
 @Composable
-private fun SettingsCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, content: @Composable () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().animateContentSize()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+private fun SettingsCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    saveConfig: JarvisConfig? = null,
+    applyGateway: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().animateContentSize()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.Start) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(10.dp))
-                Column {
+                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(12.dp)) {
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp).size(20.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
                     Text(title, fontWeight = FontWeight.SemiBold)
                     Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
             Spacer(Modifier.height(14.dp))
             content()
+            if (saveConfig != null) {
+                Spacer(Modifier.height(12.dp))
+                SettingsSaveAction(title, saveConfig, applyGateway)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSaveAction(section: String, config: JarvisConfig, applyGateway: Boolean) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val latestConfig by rememberUpdatedState(config)
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf("") }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(config) {
+        if (!busy) notice = ""
+    }
+
+    Column(horizontalAlignment = Alignment.Start) {
+        OutlinedButton(onClick = {
+            val snapshot = config
+            if (!ConfigStore(context).save(snapshot, durable = true)) {
+                failed = true
+                notice = "$section 保存失败，请检查手机存储空间。"
+                return@OutlinedButton
+            }
+            failed = false
+            if (applyGateway) {
+                busy = true
+                notice = "$section 已保存，正在应用到 OpenClaw…"
+                scope.launch {
+                    val result = runCatching { OpenClawProcessManager.get(context).start() }
+                    result.onSuccess {
+                        failed = !it.started
+                        notice = if (it.started) "$section 已保存并生效。" else "$section 已保存；OpenClaw 尚未就绪：${it.message}"
+                    }.onFailure {
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        failed = true
+                        notice = "$section 已保存；应用失败，请检查 Gateway 状态。"
+                    }
+                    if (latestConfig != snapshot) notice += " 有新的修改，请再次保存。"
+                    busy = false
+                }
+            } else {
+                notice = "$section 已保存并生效。"
+            }
+        }, enabled = !busy, modifier = Modifier.jarvisPressScale()) {
+            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(if (busy) "应用中…" else "保存并生效")
+        }
+        if (notice.isNotBlank()) {
+            Text(notice, color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
         }
     }
 }
@@ -1231,12 +2203,13 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onC
 
 @Composable
 private fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), modifier = Modifier.fillMaxWidth().animateContentSize()) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(28.dp)) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(10.dp))
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
+        ThemeIllustration(title, subtitle,
+            compact = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE)
+        Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(10.dp))
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
