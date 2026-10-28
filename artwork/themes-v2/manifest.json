@@ -1,0 +1,2041 @@
+{
+  "provider": "local A1111",
+  "api": "http://127.0.0.1:7861",
+  "generator": "tools/generate-theme-v2.py",
+  "model": "sdxl\\kohaku-xl-epsilon-rev1.safetensors [516047db97]",
+  "sampler": "DPM++ 2M Karras",
+  "steps": 24,
+  "cfg_scale": 6.0,
+  "available_models": [
+    "sd1.5\\anything-v5.safetensors [7f96a1a9ca]",
+    "sd1.5\\Realistic_Vision_V5.1.safetensors [99a75a901f]",
+    "sdxl\\CyberRealisticXL_Play_V10.safetensors [fd5e870b5b]",
+    "sdxl\\kohaku-xl-epsilon-rev1.safetensors [516047db97]",
+    "sdxl\\pornmasterPro_noobV02VAE.safetensors [0903315a07]"
+  ],
+  "themes": [
+    {
+      "id": "deep_night",
+      "label": "深海夜航",
+      "dark": true,
+      "palette": [
+        "#0A1A2B",
+        "#1B3A5C",
+        "#9EC6E0"
+      ],
+      "base_seed": 270601,
+      "images": {
+        "banner": {
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, ultra wide anime banner composition, the whole subject sits inside the right third of the frame, the left half stays calm and almost empty, clean quiet negative space, no text, anime night seascape, a tall lighthouse on a cliff at the right edge of the frame with its beam sweeping to the left, a small sailboat with a warm lantern below it, the left two thirds is open empty dark sea and starry sky, drifting sea mist",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side",
+          "seed": 270601,
+          "gen_size": [
+            1536,
+            640
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\banner.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_banner.webp",
+          "bytes": 20692,
+          "webp_quality": 82,
+          "saliency_centroid": 0.492,
+          "flipped_for_right_bias": false,
+          "style_generation": "v2"
+        },
+        "avatar": {
+          "prompt": "masterpiece, best quality, polished anime film illustration, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, close-up portrait of one young adult anime girl with short black hair, profile view turning slightly toward viewer, sea breeze lifting her hair, deep blue night ocean bokeh behind her, calm melancholic expression, centred head and shoulders, clean readable silhouette",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270601,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\avatar.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_avatar.webp",
+          "bytes": 17838,
+          "webp_quality": 85,
+          "style_generation": "v1"
+        },
+        "texture": {
+          "prompt": "subtle dark navy grain noise texture, fine film grain, faint ocean shimmer, flat seamless texture tile, even flat lighting, no objects, no text, uniform pattern",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270601,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": "mirror-wrap",
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\texture.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_texture.webp",
+          "bytes": 33872,
+          "webp_quality": 78,
+          "style_generation": "v2"
+        },
+        "portrait_room": {
+          "seed": 271801,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime character illustration for a phone UI empty state, medium shot from the waist up, the character stands low in the frame with generous empty headroom above her head, her head starts below the top third line, the top third of the canvas is calm nearly empty background reserved for interface text, camera at eye level, shallow depth of field, no text, a cool-eyed adult woman with short black hair and a fitted dark navy turtleneck sweater standing at a dark pier railing with her body half turned away, she looks back at the viewer over her shoulder with a cool sidelong gaze and the faintest smile, one hand resting on the railing, wind lifting her hair, cool blue mono night palette, the dark sea and a distant lighthouse beam behind her, salt mist sheen on her skin",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, close-up, tight crop, cropped head, head touching the top edge, face fills the frame, no headroom, zoomed in",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "a cool-eyed adult woman with short black hair and a fitted dark navy turtleneck sweater standing at a dark pier railing with her body half turned away, she looks back at the viewer over her shoulder with a cool sidelong gaze and the faintest smile, one hand resting on the railing, wind lifting her hair, cool blue mono night palette, the dark sea and a distant lighthouse beam behind her, salt mist sheen on her skin",
+          "note": "reused existing source portrait_room.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\portrait_room.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_portrait_room.webp",
+          "bytes": 31560,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state, one of three rotating illustrations",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "max_height_dp_note": "height is capped at 200dp; aspect 3:4 means the WebP is scaled, never cropped",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 26.0,
+              "stddev": 23.8
+            },
+            "text_band": {
+              "mean": 20.2,
+              "stddev": 11.2
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: adult, fitted turtleneck + coat, only chest line implied; no skin exposure",
+            "rejected_attempts": 4
+          }
+        },
+        "portrait_header": {
+          "seed": 271418,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, ultra wide anime character banner, the whole character sits inside the right third of the frame, the left two thirds is calm almost empty background reserved for a title, clean quiet negative space, no text, the same adult woman with short black hair in a dark navy high-collar knit sweater standing at a lit railing on the right side of the frame, medium shot from the waist up, half turned toward the viewer with a cool level stare, warm lantern rim light along her face and hair, dark sea and two slow lighthouse beams on the left",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            1536,
+            640
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult woman with short black hair in a dark navy high-collar knit sweater standing at a lit railing on the right side of the frame, medium shot from the waist up, half turned toward the viewer with a cool level stare, warm lantern rim light along her face and hair, dark sea and two slow lighthouse beams on the left",
+          "note": "reused existing source portrait_header.png",
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\portrait_header.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_portrait_header.webp",
+          "bytes": 13742,
+          "webp_quality": 82,
+          "ui_budget": {
+            "usage": "settings header illustration",
+            "max_height_dp": 140,
+            "width": "fillMaxWidth",
+            "placement": "below the title row, never behind it",
+            "forbidden": [
+              "covering the title text",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 37.5,
+              "stddev": 21.6
+            },
+            "text_band": {
+              "mean": 28.0,
+              "stddev": 11.6
+            },
+            "width": 1536,
+            "height": 640,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: full coat, silhouette at railing; no exposure, no lewd framing",
+            "rejected_attempts": 2
+          },
+          "subject_centroid_before": 0.494,
+          "subject_shift_px": 409,
+          "subject_centroid_after": 0.543
+        },
+        "scene_a": {
+          "seed": 271381,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime scene illustration for a phone UI empty state, the character seen together with her place, calm nearly empty background band across the top of the canvas, the subject sits in the lower two thirds, soft depth of field, no text, the same adult woman sitting on a mooring bollard at a night harbour, elbows on her knees, chin on her hand, watching a small sailboat with a warm lantern, a duffel coat over her shoulders, cold blue moonlight and wet stone",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult woman sitting on a mooring bollard at a night harbour, elbows on her knees, chin on her hand, watching a small sailboat with a warm lantern, a duffel coat over her shoulders, cold blue moonlight and wet stone",
+          "note": "reused existing source scene_a.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\scene_a.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_scene_a.webp",
+          "bytes": 23134,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 1",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 33.9,
+              "stddev": 5.1
+            },
+            "text_band": {
+              "mean": 30.9,
+              "stddev": 3.0
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: seated figure in duffel coat, hands and face only; nothing exposed",
+            "rejected_attempts": 0
+          }
+        },
+        "scene_b": {
+          "seed": 271454,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime close-up illustration, the character's face and shoulders fill the lower two thirds of the canvas, calm empty bokeh above her head, soft depth of field, no text, close-up of the same adult woman's face half turned to the viewer, high-collar navy sweater zipped to the throat and covering her shoulders, eyes narrowed against the salt wind, a strand of hair across her lips, faint tired smile, deep blue bokeh of harbour lamps, glistening skin on her cheek",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "close-up of the same adult woman's face half turned to the viewer, high-collar navy sweater zipped to the throat and covering her shoulders, eyes narrowed against the salt wind, a strand of hair across her lips, faint tired smile, deep blue bokeh of harbour lamps, glistening skin on her cheek",
+          "note": "reused existing source scene_b.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\scene_b.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_scene_b.webp",
+          "bytes": 42450,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 2",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 49.7,
+              "stddev": 32.1
+            },
+            "text_band": {
+              "mean": 44.0,
+              "stddev": 31.7
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: face close-up, high collar zipped to throat, shoulders covered",
+            "rejected_attempts": 1
+          }
+        },
+        "thumb": {
+          "seed": 271494,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, square anime icon illustration, upper body from the chest up, the whole head and shoulders are fully inside the canvas with clear margin around the hair, the head is centred, plain simple background, clear readable silhouette at small sizes, no text, head and shoulders of the same adult woman, face centred and large, calm steady gaze straight at the viewer, navy sweater collar, plain deep blue gradient background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, cropped head, forehead cut off, extreme close-up, zoomed face, half face out of frame",
+          "gen_size": [
+            768,
+            768
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "head and shoulders of the same adult woman, face centred and large, calm steady gaze straight at the viewer, navy sweater collar, plain deep blue gradient background",
+          "note": "reused existing source thumb.png",
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\deep_night\\thumb.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_deep_night_thumb.webp",
+          "bytes": 23002,
+          "webp_quality": 85,
+          "ui_budget": {
+            "usage": "small icon for conversation / workspace cards",
+            "max_height_dp": 72,
+            "width": "fillMaxWidth",
+            "placement": "56-72dp square, circular or 24dp rounded corner crop, subject centred",
+            "forbidden": [
+              "large background",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 75.7,
+              "stddev": 48.4
+            },
+            "text_band": {
+              "mean": 75.7,
+              "stddev": 48.4
+            },
+            "width": 512,
+            "height": 512,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: head-and-shoulders, navy collar, level gaze; clothed adult face",
+            "rejected_attempts": 1
+          }
+        }
+      },
+      "content_rating": "suggestive-non-explicit"
+    },
+    {
+      "id": "sakura_night",
+      "label": "樱夜校园",
+      "dark": true,
+      "palette": [
+        "#160E1C",
+        "#3D2338",
+        "#E8B7C8"
+      ],
+      "base_seed": 270611,
+      "images": {
+        "banner": {
+          "prompt": "masterpiece, best quality, polished anime film illustration, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, Japanese school building at night along a cherry blossom lined path, warm glowing street lamps, dusk afterglow along the horizon, drifting pink petals, ultra wide cinematic banner, main subject and focal light on the right third, calm quiet empty sky filling the left side, clean negative space, no text, no letters",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270612,
+          "gen_size": [
+            1536,
+            640
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\banner.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_banner.webp",
+          "bytes": 63010,
+          "webp_quality": 82,
+          "saliency_centroid": 0.518,
+          "flipped_for_right_bias": false,
+          "style_generation": "v1"
+        },
+        "avatar": {
+          "prompt": "masterpiece, best quality, polished anime film illustration, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, close-up portrait of one anime schoolgirl in a sailor uniform, cherry blossoms and softly glowing night lanterns behind her, gentle smile, softly lit evening, centred head and shoulders, clean readable silhouette",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270612,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\avatar.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_avatar.webp",
+          "bytes": 33094,
+          "webp_quality": 85,
+          "style_generation": "v1"
+        },
+        "texture": {
+          "prompt": "dark plum paper texture with faint falling petal specks, very subtle grain, flat seamless texture tile, even flat lighting, no objects, no text, uniform pattern",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270612,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": "mirror-wrap",
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\texture.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_texture.webp",
+          "bytes": 38700,
+          "webp_quality": 78,
+          "style_generation": "v2"
+        },
+        "portrait_room": {
+          "seed": 271312,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime character illustration for a phone UI empty state, medium shot from the waist up, the character stands low in the frame with generous empty headroom above her head, her head starts below the top third line, the top third of the canvas is calm nearly empty background reserved for interface text, camera at eye level, shallow depth of field, no text, a sweet-faced adult university student in a neat navy sailor-collar uniform with a loosely tied scarf, she sits on a stone step with her knees together and tilts her head, cheeks slightly flushed, shy warm smile, cherry petals in her hair, glowing paper lantern light behind her",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, close-up, tight crop, cropped head, head touching the top edge, face fills the frame, no headroom, zoomed in",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "a sweet-faced adult university student in a neat navy sailor-collar uniform with a loosely tied scarf, she sits on a stone step with her knees together and tilts her head, cheeks slightly flushed, shy warm smile, cherry petals in her hair, glowing paper lantern light behind her",
+          "note": "reused existing source portrait_room.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\portrait_room.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_portrait_room.webp",
+          "bytes": 28598,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state, one of three rotating illustrations",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "max_height_dp_note": "height is capped at 200dp; aspect 3:4 means the WebP is scaled, never cropped",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 34.1,
+              "stddev": 12.2
+            },
+            "text_band": {
+              "mean": 31.5,
+              "stddev": 10.8
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: blazer + scarf + long coat, profile glance over shoulder; clothed",
+            "rejected_attempts": 0
+          }
+        },
+        "portrait_header": {
+          "seed": 271352,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, ultra wide anime character banner, the whole character sits inside the right third of the frame, the left two thirds is calm almost empty background reserved for a title, clean quiet negative space, no text, the same adult student in her navy sailor-collar uniform leaning on a school corridor railing at night, one hand at her chest, an embarrassed but pleased smile, pink petals drifting past, warm lantern glow rimming her silhouette",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            1536,
+            640
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult student in her navy sailor-collar uniform leaning on a school corridor railing at night, one hand at her chest, an embarrassed but pleased smile, pink petals drifting past, warm lantern glow rimming her silhouette",
+          "note": "reused existing source portrait_header.png",
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\portrait_header.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_portrait_header.webp",
+          "bytes": 11722,
+          "webp_quality": 82,
+          "ui_budget": {
+            "usage": "settings header illustration",
+            "max_height_dp": 140,
+            "width": "fillMaxWidth",
+            "placement": "below the title row, never behind it",
+            "forbidden": [
+              "covering the title text",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 19.8,
+              "stddev": 5.4
+            },
+            "text_band": {
+              "mean": 18.4,
+              "stddev": 4.7
+            },
+            "width": 1536,
+            "height": 640,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: uniformed figure at corridor railing, back turned; clothed",
+            "rejected_attempts": 0
+          },
+          "subject_centroid_before": 0.579,
+          "subject_shift_px": 278,
+          "subject_centroid_after": 0.584
+        },
+        "scene_a": {
+          "seed": 271453,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime scene illustration for a phone UI empty state, the character seen together with her place, calm nearly empty background band across the top of the canvas, the subject sits in the lower two thirds, soft depth of field, no text, the same adult student walking home under cherry trees at night, a buttoned navy school blazer with a white sailor collar and long opaque sleeves, a school bag on one shoulder, she glances up at the lanterns, petals caught in her hair, warm paper-lantern light and a dark blue sky",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult student walking home under cherry trees at night, a buttoned navy school blazer with a white sailor collar and long opaque sleeves, a school bag on one shoulder, she glances up at the lanterns, petals caught in her hair, warm paper-lantern light and a dark blue sky",
+          "note": "reused existing source scene_a.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\scene_a.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_scene_a.webp",
+          "bytes": 34234,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 1",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 48.4,
+              "stddev": 49.6
+            },
+            "text_band": {
+              "mean": 44.1,
+              "stddev": 45.6
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": false,
+            "text_band_verdict": "measured",
+            "boundary": "pass: buttoned school blazer with sailor collar, walking; fully clothed",
+            "rejected_attempts": 1
+          }
+        },
+        "scene_b": {
+          "seed": 271493,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime close-up illustration, the character's face and shoulders fill the lower two thirds of the canvas, calm empty bokeh above her head, soft depth of field, no text, close-up of the same adult student looking up at the viewer with bright gentle eyes and a shy smile, one petal on her cheek, warm lantern glow across a softly lit face, navy sailor collar buttoned to the throat, soft plum bokeh",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "close-up of the same adult student looking up at the viewer with bright gentle eyes and a shy smile, one petal on her cheek, warm lantern glow across a softly lit face, navy sailor collar buttoned to the throat, soft plum bokeh",
+          "note": "reused existing source scene_b.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\scene_b.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_scene_b.webp",
+          "bytes": 29574,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 2",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 37.9,
+              "stddev": 31.6
+            },
+            "text_band": {
+              "mean": 35.7,
+              "stddev": 32.0
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: shy smile, sailor collar buttoned to the throat; clothed",
+            "rejected_attempts": 1
+          }
+        },
+        "thumb": {
+          "seed": 271563,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, square anime icon illustration, upper body from the chest up, the whole head and shoulders are fully inside the canvas with clear margin around the hair, the head is centred, plain simple background, clear readable silhouette at small sizes, no text, head and shoulders of the same sweet-faced adult student, whole head inside the frame, a soft pleased smile and a small hair clip, navy sailor collar buttoned to the throat, plain dark plum background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, cropped head, forehead cut off, extreme close-up, zoomed face, half face out of frame",
+          "gen_size": [
+            768,
+            768
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "head and shoulders of the same sweet-faced adult student, whole head inside the frame, a soft pleased smile and a small hair clip, navy sailor collar buttoned to the throat, plain dark plum background",
+          "note": "reused existing source thumb.png",
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\sakura_night\\thumb.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_sakura_night_thumb.webp",
+          "bytes": 26942,
+          "webp_quality": 85,
+          "ui_budget": {
+            "usage": "small icon for conversation / workspace cards",
+            "max_height_dp": 72,
+            "width": "fillMaxWidth",
+            "placement": "56-72dp square, circular or 24dp rounded corner crop, subject centred",
+            "forbidden": [
+              "large background",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 110.2,
+              "stddev": 52.0
+            },
+            "text_band": {
+              "mean": 110.2,
+              "stddev": 52.0
+            },
+            "width": 512,
+            "height": 512,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: head centred, sailor uniform closed at collar; clothed adult face",
+            "rejected_attempts": 2
+          }
+        }
+      },
+      "content_rating": "suggestive-non-explicit"
+    },
+    {
+      "id": "neon_cyber",
+      "label": "霓虹赛博",
+      "dark": true,
+      "palette": [
+        "#0B0A18",
+        "#2A1147",
+        "#22D3EE"
+      ],
+      "base_seed": 270621,
+      "images": {
+        "banner": {
+          "prompt": "masterpiece, best quality, polished anime film illustration, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, rainy neon city street at night, holographic signage, wet asphalt reflecting magenta and cyan light, tall towers receding into purple fog, ultra wide cinematic banner, main subject and focal light on the right third, calm quiet empty sky filling the left side, clean negative space, no text, no letters",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270623,
+          "gen_size": [
+            1536,
+            640
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\neon_cyber\\banner.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_neon_cyber_banner.webp",
+          "bytes": 45492,
+          "webp_quality": 82,
+          "saliency_centroid": 0.48,
+          "flipped_for_right_bias": false,
+          "style_generation": "v1"
+        },
+        "avatar": {
+          "prompt": "masterpiece, best quality, polished anime film illustration, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, close-up portrait of one cyberpunk anime girl wearing headphones, neon rim light outline along her silhouette, magenta and cyan glow, confident expression, centred head and shoulders, clean readable silhouette",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270623,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\neon_cyber\\avatar.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_neon_cyber_avatar.webp",
+          "bytes": 25646,
+          "webp_quality": 85,
+          "style_generation": "v1"
+        },
+        "texture": {
+          "prompt": "near-black deep navy background, extremely thin 1px cyan and magenta neon grid lines, fine scanlines, very low contrast, dark tech surface, flat even lighting, flat seamless texture tile, even flat lighting, no objects, no text, uniform pattern",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, glitch, glitch art, color blocks, saturated blocks, bright colors, neon sign, glow, bloom, kaleidoscope, ornament, mandala, high contrast, huge color faces, gradient background, chromatic aberration, datamosh, noisy rgb",
+          "seed": 271023,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": "native-tiling",
+          "attempts": 5,
+          "source_black_pct": 92.75,
+          "source_stddev": 27.19,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\neon_cyber\\texture.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_neon_cyber_texture.webp",
+          "bytes": 1598,
+          "webp_quality": 78,
+          "seam_max": 0.6,
+          "qa": {
+            "gray_mean": 8.2,
+            "gray_stddev": 2.83,
+            "contrast_pct": 1.11,
+            "black_pct": 100.0,
+            "p1": 3,
+            "p5": 6,
+            "saturated_pct": 0.0
+          },
+          "grain": "procedural_neon",
+          "style_generation": "v2"
+        }
+      }
+    },
+    {
+      "id": "morning_bento",
+      "label": "晨光便当",
+      "dark": false,
+      "palette": [
+        "#4A3520",
+        "#C99A5B",
+        "#FFF3DC"
+      ],
+      "base_seed": 270631,
+      "images": {
+        "banner": {
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, ultra wide anime banner composition, the whole subject sits inside the right third of the frame, the left half stays calm and almost empty, clean quiet negative space, no text, anime morning kitchen, a colourful handmade bento box with rice, tamagoyaki and greens on the right foreground of a wooden counter, warm sunlight through paper shoji screens, soft rising steam, honey and cream tones, cozy tidy",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side",
+          "seed": 270634,
+          "gen_size": [
+            1536,
+            640
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\banner.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_banner.webp",
+          "bytes": 42918,
+          "webp_quality": 82,
+          "saliency_centroid": 0.533,
+          "flipped_for_right_bias": false,
+          "style_generation": "v2"
+        },
+        "avatar": {
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, close-up portrait of one cheerful anime girl wearing a linen apron, warm morning sunlight, bright kitchen behind her, bright energetic smile, centred head and shoulders, clean readable silhouette",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side",
+          "seed": 270634,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\avatar.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_avatar.webp",
+          "bytes": 26136,
+          "webp_quality": 85,
+          "style_generation": "v2"
+        },
+        "texture": {
+          "prompt": "near-white, very low contrast, subtle paper fiber, fine grain, seamless tile, plain near-white cream paper, fine fiber grain, very subtle warm flecks, flat seamless texture tile, even flat lighting, no objects, no text, uniform pattern",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, kaleidoscope, pattern, ornament, high contrast, dark shapes, black areas, mandala, decorative motif, symmetrical pattern, ink splash, heavy brushstroke, vignette",
+          "seed": 270734,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": "mirror-wrap",
+          "attempts": 2,
+          "source_black_pct": 0.0,
+          "source_stddev": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\texture.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_texture.webp",
+          "bytes": 13968,
+          "webp_quality": 78,
+          "seam_max": 0.0,
+          "qa": {
+            "gray_mean": 228.1,
+            "gray_stddev": 9.48,
+            "contrast_pct": 3.72,
+            "black_pct": 0.0,
+            "p1": 205,
+            "p5": 213,
+            "saturated_pct": 0.0
+          },
+          "grain": "sdxl",
+          "style_generation": "v2"
+        },
+        "portrait_room": {
+          "seed": 271333,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime character illustration for a phone UI empty state, medium shot from the waist up, the character stands low in the frame with generous empty headroom above her head, her head starts below the top third line, the top third of the canvas is calm nearly empty background reserved for interface text, camera at eye level, shallow depth of field, no text, a cheerful adult woman in a cream linen apron over a rolled-sleeve shirt, leaning on a wooden kitchen counter toward the camera with a bright grin, a fingertip of flour on her cheek, hair tied back in a loose bun, warm morning sunlight and soft steam behind her",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, close-up, tight crop, cropped head, head touching the top edge, face fills the frame, no headroom, zoomed in",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "a cheerful adult woman in a cream linen apron over a rolled-sleeve shirt, leaning on a wooden kitchen counter toward the camera with a bright grin, a fingertip of flour on her cheek, hair tied back in a loose bun, warm morning sunlight and soft steam behind her",
+          "note": "reused existing source portrait_room.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\portrait_room.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_portrait_room.webp",
+          "bytes": 31328,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state, one of three rotating illustrations",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "max_height_dp_note": "height is capped at 200dp; aspect 3:4 means the WebP is scaled, never cropped",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 46.5,
+              "stddev": 9.4
+            },
+            "text_band": {
+              "mean": 42.7,
+              "stddev": 7.2
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: apron over shirt in kitchen; clothed, no exposure",
+            "rejected_attempts": 0
+          }
+        },
+        "portrait_header": {
+          "seed": 271373,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, ultra wide anime character banner, the whole character sits inside the right third of the frame, the left two thirds is calm almost empty background reserved for a title, clean quiet negative space, no text, the same cheerful adult woman turning from a kitchen counter with a bright laugh, wooden spoon in hand, hair falling loose from a bun, backlit by warm shoji-screen morning light",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            1536,
+            640
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same cheerful adult woman turning from a kitchen counter with a bright laugh, wooden spoon in hand, hair falling loose from a bun, backlit by warm shoji-screen morning light",
+          "note": "reused existing source portrait_header.png",
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\portrait_header.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_portrait_header.webp",
+          "bytes": 31448,
+          "webp_quality": 82,
+          "ui_budget": {
+            "usage": "settings header illustration",
+            "max_height_dp": 140,
+            "width": "fillMaxWidth",
+            "placement": "below the title row, never behind it",
+            "forbidden": [
+              "covering the title text",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 72.3,
+              "stddev": 29.9
+            },
+            "text_band": {
+              "mean": 69.3,
+              "stddev": 26.3
+            },
+            "width": 1536,
+            "height": 640,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": false,
+            "text_band_verdict": "measured",
+            "boundary": "pass: coat/sleeves, back three-quarter turn; clothed",
+            "rejected_attempts": 1
+          },
+          "subject_centroid_before": 0.459,
+          "subject_shift_px": -1,
+          "subject_centroid_after": 0.459
+        },
+        "scene_a": {
+          "seed": 271413,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime scene illustration for a phone UI empty state, the character seen together with her place, calm nearly empty background band across the top of the canvas, the subject sits in the lower two thirds, soft depth of field, no text, the same adult woman sitting at a low wooden table with a handmade bento box, chopsticks raised, laughing at something off frame, warm morning sun through paper screens, steam rising",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult woman sitting at a low wooden table with a handmade bento box, chopsticks raised, laughing at something off frame, warm morning sun through paper screens, steam rising",
+          "note": "reused existing source scene_a.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\scene_a.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_scene_a.webp",
+          "bytes": 56768,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 1",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 47.6,
+              "stddev": 28.0
+            },
+            "text_band": {
+              "mean": 41.3,
+              "stddev": 20.5
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": false,
+            "text_band_verdict": "measured",
+            "boundary": "pass: bent over a table in apron and top, clothed; no explicit framing",
+            "rejected_attempts": 0
+          }
+        },
+        "scene_b": {
+          "seed": 271453,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime close-up illustration, the character's face and shoulders fill the lower two thirds of the canvas, calm empty bokeh above her head, soft depth of field, no text, close-up of the same adult woman laughing toward the viewer, eyes squeezed shut, flour on her cheek, hair escaping its bun, warm backlight and drifting steam",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "close-up of the same adult woman laughing toward the viewer, eyes squeezed shut, flour on her cheek, hair escaping its bun, warm backlight and drifting steam",
+          "note": "reused existing source scene_b.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\scene_b.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_scene_b.webp",
+          "bytes": 54966,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 2",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 130.7,
+              "stddev": 58.5
+            },
+            "text_band": {
+              "mean": 128.1,
+              "stddev": 56.9
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: laughing close-up, coat closed at the neck; clothed",
+            "rejected_attempts": 0
+          }
+        },
+        "thumb": {
+          "seed": 271493,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, square anime icon illustration, upper body from the chest up, the whole head and shoulders are fully inside the canvas with clear margin around the hair, the head is centred, plain simple background, clear readable silhouette at small sizes, no text, head and shoulders of the same cheerful adult woman, face centred and large, bright open smile, apron strap visible, plain warm cream background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, cropped head, forehead cut off, extreme close-up, zoomed face, half face out of frame",
+          "gen_size": [
+            768,
+            768
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "head and shoulders of the same cheerful adult woman, face centred and large, bright open smile, apron strap visible, plain warm cream background",
+          "note": "reused existing source thumb.png",
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\morning_bento\\thumb.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_morning_bento_thumb.webp",
+          "bytes": 18954,
+          "webp_quality": 85,
+          "ui_budget": {
+            "usage": "small icon for conversation / workspace cards",
+            "max_height_dp": 72,
+            "width": "fillMaxWidth",
+            "placement": "56-72dp square, circular or 24dp rounded corner crop, subject centred",
+            "forbidden": [
+              "large background",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 135.9,
+              "stddev": 48.2
+            },
+            "text_band": {
+              "mean": 135.9,
+              "stddev": 48.2
+            },
+            "width": 512,
+            "height": 512,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: apron straps over a high-neck top; shoulders bare but nothing exposed",
+            "rejected_attempts": 0
+          }
+        }
+      },
+      "content_rating": "suggestive-non-explicit"
+    },
+    {
+      "id": "ink_moon",
+      "label": "水墨山月",
+      "dark": false,
+      "palette": [
+        "#2B2B2B",
+        "#7C8592",
+        "#F5F3EC"
+      ],
+      "base_seed": 270641,
+      "images": {
+        "banner": {
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, ultra wide anime banner composition, the whole subject sits inside the right third of the frame, the left half stays calm and almost empty, clean quiet negative space, no text, anime film illustration in sumi-e ink wash, one ink brush mountain ridge rising on the right side of the frame, a pale moon in the upper right corner, the left two thirds is plain empty rice paper with a single faint wash, dry brush texture",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side",
+          "seed": 270645,
+          "gen_size": [
+            1536,
+            640
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\banner.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_banner.webp",
+          "bytes": 15830,
+          "webp_quality": 82,
+          "saliency_centroid": 0.486,
+          "flipped_for_right_bias": false,
+          "style_generation": "v2"
+        },
+        "avatar": {
+          "prompt": "masterpiece, best quality, polished anime film illustration, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, close-up portrait of one anime girl painted in delicate ink wash style, pale watercolour washes, rice paper texture, sparse elegant linework, centred head and shoulders, clean readable silhouette",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, cluttered left side",
+          "seed": 270645,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\avatar.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_avatar.webp",
+          "bytes": 24082,
+          "webp_quality": 85,
+          "style_generation": "v1"
+        },
+        "texture": {
+          "prompt": "near-white, very low contrast, subtle paper fiber, fine grain, seamless tile, plain off-white rice paper, fine fiber grain, the faintest grey wash, flat seamless texture tile, even flat lighting, no objects, no text, uniform pattern",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, kaleidoscope, pattern, ornament, high contrast, dark shapes, black areas, mandala, decorative motif, symmetrical pattern, ink splash, heavy brushstroke, vignette",
+          "seed": 270645,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": "mirror-wrap",
+          "attempts": 1,
+          "source_black_pct": 0.0,
+          "source_stddev": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\texture.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_texture.webp",
+          "bytes": 6994,
+          "webp_quality": 78,
+          "seam_max": 0.0,
+          "qa": {
+            "gray_mean": 229.0,
+            "gray_stddev": 8.93,
+            "contrast_pct": 3.5,
+            "black_pct": 0.0,
+            "p1": 199,
+            "p5": 216,
+            "saturated_pct": 0.0
+          },
+          "grain": "sdxl",
+          "style_generation": "v2"
+        },
+        "portrait_room": {
+          "seed": 271344,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime character illustration for a phone UI empty state, medium shot from the waist up, the character stands low in the frame with generous empty headroom above her head, her head starts below the top third line, the top third of the canvas is calm nearly empty background reserved for interface text, camera at eye level, shallow depth of field, no text, an adult woman drawn in delicate sumi-e ink wash, a pale grey robe with a soft sash fully covering her, one hand holding the sleeve closed at her collar, hair in a low loose knot, calm sidelong glance, sparse ink strokes and faint watercolour washes, plain rice paper background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, close-up, tight crop, cropped head, head touching the top edge, face fills the frame, no headroom, zoomed in",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "an adult woman drawn in delicate sumi-e ink wash, a pale grey robe with a soft sash fully covering her, one hand holding the sleeve closed at her collar, hair in a low loose knot, calm sidelong glance, sparse ink strokes and faint watercolour washes, plain rice paper background",
+          "note": "reused existing source portrait_room.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\portrait_room.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_portrait_room.webp",
+          "bytes": 29628,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state, one of three rotating illustrations",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "max_height_dp_note": "height is capped at 200dp; aspect 3:4 means the WebP is scaled, never cropped",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 81.3,
+              "stddev": 43.6
+            },
+            "text_band": {
+              "mean": 74.1,
+              "stddev": 38.7
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": false,
+            "text_band_verdict": "measured",
+            "boundary": "pass: pale robe with sash, hand at collar; elegantly covered",
+            "rejected_attempts": 0
+          }
+        },
+        "portrait_header": {
+          "seed": 271384,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, ultra wide anime character banner, the whole character sits inside the right third of the frame, the left two thirds is calm almost empty background reserved for a title, clean quiet negative space, no text, the same adult woman in delicate sumi-e ink wash, pale robe and soft sash, holding a paper umbrella low behind her shoulder, walking past a faint ink mountain ridge, serene sidelong glance at the viewer, dry brush texture and empty rice paper",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            1536,
+            640
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult woman in delicate sumi-e ink wash, pale robe and soft sash, holding a paper umbrella low behind her shoulder, walking past a faint ink mountain ridge, serene sidelong glance at the viewer, dry brush texture and empty rice paper",
+          "note": "reused existing source portrait_header.png",
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\portrait_header.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_portrait_header.webp",
+          "bytes": 14794,
+          "webp_quality": 82,
+          "ui_budget": {
+            "usage": "settings header illustration",
+            "max_height_dp": 140,
+            "width": "fillMaxWidth",
+            "placement": "below the title row, never behind it",
+            "forbidden": [
+              "covering the title text",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 60.4,
+              "stddev": 13.8
+            },
+            "text_band": {
+              "mean": 65.9,
+              "stddev": 10.0
+            },
+            "width": 1536,
+            "height": 640,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: robe and paper umbrella, distant figure; covered",
+            "rejected_attempts": 0
+          },
+          "subject_centroid_before": 0.496,
+          "subject_shift_px": 406,
+          "subject_centroid_after": 0.506
+        },
+        "scene_a": {
+          "seed": 271424,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime scene illustration for a phone UI empty state, the character seen together with her place, calm nearly empty background band across the top of the canvas, the subject sits in the lower two thirds, soft depth of field, no text, the same adult woman standing on a stone bridge in ink wash, one sleeve lifted to her chin, mist and a faint mountain ridge behind her, a pale moon, sparse dry brush strokes on rice paper",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult woman standing on a stone bridge in ink wash, one sleeve lifted to her chin, mist and a faint mountain ridge behind her, a pale moon, sparse dry brush strokes on rice paper",
+          "note": "reused existing source scene_a.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\scene_a.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_scene_a.webp",
+          "bytes": 16218,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 1",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 65.7,
+              "stddev": 9.0
+            },
+            "text_band": {
+              "mean": 60.5,
+              "stddev": 5.3
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: standing figure at a moonlit lake, robe closed; covered",
+            "rejected_attempts": 0
+          }
+        },
+        "scene_b": {
+          "seed": 271464,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime close-up illustration, the character's face and shoulders fill the lower two thirds of the canvas, calm empty bokeh above her head, soft depth of field, no text, close-up of the same adult woman in ink wash, a faint half smile and lowered eyes, one loose strand of hair, minimal brush strokes, a single soft grey wash",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "close-up of the same adult woman in ink wash, a faint half smile and lowered eyes, one loose strand of hair, minimal brush strokes, a single soft grey wash",
+          "note": "reused existing source scene_b.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\scene_b.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_scene_b.webp",
+          "bytes": 34076,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 2",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 96.9,
+              "stddev": 37.4
+            },
+            "text_band": {
+              "mean": 99.2,
+              "stddev": 32.6
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: calm face close-up, kimono collar closed; clothed",
+            "rejected_attempts": 0
+          }
+        },
+        "thumb": {
+          "seed": 271565,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, square anime icon illustration, upper body from the chest up, the whole head and shoulders are fully inside the canvas with clear margin around the hair, the head is centred, plain simple background, clear readable silhouette at small sizes, no text, head and shoulders of the same adult woman in delicate ink wash, whole head inside the frame with the full hairstyle visible, serene expression, plain off-white rice paper background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, cropped head, forehead cut off, extreme close-up, zoomed face, half face out of frame",
+          "gen_size": [
+            768,
+            768
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "head and shoulders of the same adult woman in delicate ink wash, whole head inside the frame with the full hairstyle visible, serene expression, plain off-white rice paper background",
+          "note": "reused existing source thumb.png",
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\ink_moon\\thumb.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_ink_moon_thumb.webp",
+          "bytes": 14820,
+          "webp_quality": 85,
+          "ui_budget": {
+            "usage": "small icon for conversation / workspace cards",
+            "max_height_dp": 72,
+            "width": "fillMaxWidth",
+            "placement": "56-72dp square, circular or 24dp rounded corner crop, subject centred",
+            "forbidden": [
+              "large background",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 33.0,
+              "stddev": 7.4
+            },
+            "text_band": {
+              "mean": 33.0,
+              "stddev": 7.4
+            },
+            "width": 512,
+            "height": 512,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: head inside frame, high collar kimono; clothed adult face",
+            "rejected_attempts": 1
+          }
+        }
+      },
+      "content_rating": "suggestive-non-explicit"
+    },
+    {
+      "id": "paper_minimal",
+      "label": "纸感极简",
+      "dark": false,
+      "palette": [
+        "#3A3A38",
+        "#B8B2A7",
+        "#FBFAF7"
+      ],
+      "base_seed": 270651,
+      "images": {
+        "banner": {
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, ultra wide anime banner composition, the whole subject sits inside the right third of the frame, the left half stays calm and almost empty, clean quiet negative space, no text, flat paper-cut anime illustration, layered torn paper hills and a small torii gate on the right, one muted teal accent colour, generous off-white space on the left, crisp soft paper shadows",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side",
+          "seed": 270656,
+          "gen_size": [
+            1536,
+            640
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\banner.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_banner.webp",
+          "bytes": 35538,
+          "webp_quality": 82,
+          "saliency_centroid": 0.521,
+          "flipped_for_right_bias": false,
+          "style_generation": "v2"
+        },
+        "avatar": {
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, close-up portrait of one anime girl with a clear simple friendly face and big expressive eyes, flat paper-cut illustration style, clean thin outlines, one muted teal accent, plain off-white background, head and shoulders, centred head and shoulders, clean readable silhouette",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side",
+          "seed": 270656,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": null,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\avatar.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_avatar.webp",
+          "bytes": 23542,
+          "webp_quality": 85,
+          "style_generation": "v2"
+        },
+        "texture": {
+          "prompt": "near-white, very low contrast, subtle paper fiber, fine grain, seamless tile, plain off-white paper surface, fine random sand-like fibre grain, no repeating shapes, even tone, flat seamless texture tile, even flat lighting, no objects, no text, uniform pattern",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, kaleidoscope, pattern, ornament, high contrast, dark shapes, black areas, mandala, decorative motif, symmetrical pattern, ink splash, heavy brushstroke, vignette, grid, ruled lines, plaid, checkerboard, tile pattern, repeating shapes",
+          "seed": 270756,
+          "gen_size": [
+            768,
+            768
+          ],
+          "request": {
+            "steps": 24,
+            "cfg_scale": 6.0,
+            "sampler_name": "DPM++ 2M",
+            "scheduler": "Karras"
+          },
+          "tiling": "mirror-wrap",
+          "attempts": 2,
+          "source_black_pct": 0.0,
+          "source_stddev": 17.37,
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\texture.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_texture.webp",
+          "bytes": 61102,
+          "webp_quality": 78,
+          "seam_max": 0.0,
+          "qa": {
+            "gray_mean": 219.3,
+            "gray_stddev": 11.11,
+            "contrast_pct": 4.36,
+            "black_pct": 0.0,
+            "p1": 200,
+            "p5": 205,
+            "saturated_pct": 0.0
+          },
+          "grain": "procedural",
+          "style_generation": "v2"
+        },
+        "portrait_room": {
+          "seed": 271355,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime character illustration for a phone UI empty state, medium shot from the waist up, the character stands low in the frame with generous empty headroom above her head, her head starts below the top third line, the top third of the canvas is calm nearly empty background reserved for interface text, camera at eye level, shallow depth of field, no text, an adult woman in flat paper-cut illustration style, thin clean outlines, modern slate-grey blazer over a simple top, arms folded, short bob hair, a cool aloof sideways look, one muted teal accent, plain off-white background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, close-up, tight crop, cropped head, head touching the top edge, face fills the frame, no headroom, zoomed in",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "an adult woman in flat paper-cut illustration style, thin clean outlines, modern slate-grey blazer over a simple top, arms folded, short bob hair, a cool aloof sideways look, one muted teal accent, plain off-white background",
+          "note": "reused existing source portrait_room.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\portrait_room.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_portrait_room.webp",
+          "bytes": 18920,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state, one of three rotating illustrations",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "max_height_dp_note": "height is capped at 200dp; aspect 3:4 means the WebP is scaled, never cropped",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 128.3,
+              "stddev": 17.5
+            },
+            "text_band": {
+              "mean": 118.0,
+              "stddev": 10.4
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: blazer over collared shirt, arms folded; fully clothed",
+            "rejected_attempts": 0
+          }
+        },
+        "portrait_header": {
+          "seed": 271456,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, ultra wide anime character banner, the whole character sits inside the right third of the frame, the left two thirds is calm almost empty background reserved for a title, clean quiet negative space, no text, the same adult woman in flat paper-cut illustration style, thin crisp outlines, slate blazer and simple high-neck top, standing with arms loosely crossed and a composedly indifferent expression, one muted teal accent panel behind her, layered paper shadows, plain off-white background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            1536,
+            640
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "the same adult woman in flat paper-cut illustration style, thin crisp outlines, slate blazer and simple high-neck top, standing with arms loosely crossed and a composedly indifferent expression, one muted teal accent panel behind her, layered paper shadows, plain off-white background",
+          "note": "reused existing source portrait_header.png",
+          "size": [
+            1536,
+            640
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\portrait_header.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_portrait_header.webp",
+          "bytes": 7158,
+          "webp_quality": 82,
+          "ui_budget": {
+            "usage": "settings header illustration",
+            "max_height_dp": 140,
+            "width": "fillMaxWidth",
+            "placement": "below the title row, never behind it",
+            "forbidden": [
+              "covering the title text",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 132.3,
+              "stddev": 8.5
+            },
+            "text_band": {
+              "mean": 135.7,
+              "stddev": 7.1
+            },
+            "width": 1536,
+            "height": 640,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": true,
+            "text_band_verdict": "measured",
+            "boundary": "pass: long coat, distant standing figure; covered",
+            "rejected_attempts": 1
+          },
+          "subject_centroid_before": 0.492,
+          "subject_shift_px": 412,
+          "subject_centroid_after": 0.523
+        },
+        "scene_a": {
+          "seed": 271572,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime scene illustration for a phone UI empty state, the character seen together with her place, calm nearly empty background band across the top of the canvas, the subject sits in the lower two thirds, soft depth of field, no text, close-up portrait of one adult woman with a clear simple friendly face and calm eyes, flat paper-cut illustration style, clean thin outlines, slate blazer, she stands beside a small potted plant, one muted teal accent, plain off-white background, head and shoulders, arms loosely folded",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "close-up portrait of one adult woman with a clear simple friendly face and calm eyes, flat paper-cut illustration style, clean thin outlines, slate blazer, she stands beside a small potted plant, one muted teal accent, plain off-white background, head and shoulders, arms loosely folded",
+          "note": "reused existing source scene_a.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\scene_a.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_scene_a.webp",
+          "bytes": 28354,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 1",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 114.6,
+              "stddev": 31.6
+            },
+            "text_band": {
+              "mean": 106.5,
+              "stddev": 28.1
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "headroom-extend",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": false,
+            "text_band_verdict": "measured",
+            "boundary": "pass: closed blouse and jacket, facing viewer; clothed",
+            "rejected_attempts": 2
+          }
+        },
+        "scene_b": {
+          "seed": 271612,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime close-up illustration, the character's face and shoulders fill the lower two thirds of the canvas, calm empty bokeh above her head, soft depth of field, no text, close-up portrait of one adult woman with a clear simple friendly face and large expressive eyes, flat paper-cut illustration style, clean thin outlines, half-lidded cool gaze to one side, one muted teal accent, plain off-white background, head and shoulders",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+          "gen_size": [
+            768,
+            1024
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "close-up portrait of one adult woman with a clear simple friendly face and large expressive eyes, flat paper-cut illustration style, clean thin outlines, half-lidded cool gaze to one side, one muted teal accent, plain off-white background, head and shoulders",
+          "note": "reused existing source scene_b.png",
+          "size": [
+            768,
+            1024
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\scene_b.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_scene_b.webp",
+          "bytes": 43358,
+          "webp_quality": 84,
+          "ui_budget": {
+            "usage": "conversation empty state rotation slot 2",
+            "rotation_group": [
+              "portrait_room",
+              "scene_a",
+              "scene_b"
+            ],
+            "rotation_rule": "never repeat the same illustration twice inside one session",
+            "max_height_dp": 200,
+            "width": "fillMaxWidth",
+            "placement": "inside the scrolling content flow",
+            "forbidden": [
+              "overlay on top of content",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 135.8,
+              "stddev": 37.3
+            },
+            "text_band": {
+              "mean": 137.0,
+              "stddev": 34.8
+            },
+            "width": 768,
+            "height": 1024,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: close-up face, loose open collar showing collarbone; no exposure",
+            "rejected_attempts": 2
+          }
+        },
+        "thumb": {
+          "seed": 271515,
+          "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, square anime icon illustration, upper body from the chest up, the whole head and shoulders are fully inside the canvas with clear margin around the hair, the head is centred, plain simple background, clear readable silhouette at small sizes, no text, head and shoulders of the same adult woman in flat paper-cut style, face centred and large, neutral composed expression, thin outlines, plain off-white background",
+          "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi, cropped head, forehead cut off, extreme close-up, zoomed face, half face out of frame",
+          "gen_size": [
+            768,
+            768
+          ],
+          "content_rating": "suggestive-non-explicit",
+          "character": "head and shoulders of the same adult woman in flat paper-cut style, face centred and large, neutral composed expression, thin outlines, plain off-white background",
+          "note": "reused existing source thumb.png",
+          "size": [
+            512,
+            512
+          ],
+          "source": "artwork\\themes-v2\\paper_minimal\\thumb.png",
+          "output": "app\\src\\main\\res\\drawable-nodpi\\theme_paper_minimal_thumb.webp",
+          "bytes": 21796,
+          "webp_quality": 85,
+          "ui_budget": {
+            "usage": "small icon for conversation / workspace cards",
+            "max_height_dp": 72,
+            "width": "fillMaxWidth",
+            "placement": "56-72dp square, circular or 24dp rounded corner crop, subject centred",
+            "forbidden": [
+              "large background",
+              "full-screen background"
+            ]
+          },
+          "style_generation": "v2",
+          "qa": {
+            "region": {
+              "mean": 115.7,
+              "stddev": 77.2
+            },
+            "text_band": {
+              "mean": 115.7,
+              "stddev": 77.2
+            },
+            "width": 512,
+            "height": 512,
+            "layout": "native",
+            "quiet_max_stddev": 16.0,
+            "text_band_ok": null,
+            "text_band_verdict": "not required: no overlaid text",
+            "boundary": "pass: head-and-shoulders, jacket and collar; clothed adult face",
+            "rejected_attempts": 0
+          }
+        }
+      },
+      "content_rating": "suggestive-non-explicit"
+    }
+  ],
+  "generated_at": "2026-10-28T21:44:50",
+  "style_note": "style_generation v1 images were rendered before the STYLE prefix gained 'Japanese animation background painting, anime key visual, cel-shaded brushwork, 2d anime art'; v2 images match the current STYLE exactly. Textures carry no STYLE prefix, so they are reproduced identically either way. The v1 set was deliberately NOT re-rendered: reviewed art was kept over metadata symmetry, so v1 prompts are records of past runs, not reproducible with --force.",
+  "portrait_generator": "tools/generate-portraits-v2.py",
+  "portrait_note": "Character illustration set: portrait_room / scene_a / scene_b (768x1024, conversation empty-state rotation), portrait_header (1536x640, settings header), thumb (512x512, small card icon). Every character is authored as an adult woman and the negative prompt carries an explicit no-nudity / no-minor block; content_rating 'suggestive-non-explicit' is the audited ceiling for this set.",
+  "ui_budget": {
+    "portrait_room": {
+      "usage": "conversation empty state, one of three rotating illustrations",
+      "rotation_group": [
+        "portrait_room",
+        "scene_a",
+        "scene_b"
+      ],
+      "rotation_rule": "never repeat the same illustration twice inside one session",
+      "max_height_dp": 200,
+      "width": "fillMaxWidth",
+      "max_height_dp_note": "height is capped at 200dp; aspect 3:4 means the WebP is scaled, never cropped",
+      "placement": "inside the scrolling content flow",
+      "forbidden": [
+        "overlay on top of content",
+        "full-screen background"
+      ]
+    },
+    "portrait_header": {
+      "usage": "settings header illustration",
+      "max_height_dp": 140,
+      "width": "fillMaxWidth",
+      "placement": "below the title row, never behind it",
+      "forbidden": [
+        "covering the title text",
+        "full-screen background"
+      ]
+    },
+    "scene_a": {
+      "usage": "conversation empty state rotation slot 1",
+      "rotation_group": [
+        "portrait_room",
+        "scene_a",
+        "scene_b"
+      ],
+      "rotation_rule": "never repeat the same illustration twice inside one session",
+      "max_height_dp": 200,
+      "width": "fillMaxWidth",
+      "placement": "inside the scrolling content flow",
+      "forbidden": [
+        "overlay on top of content",
+        "full-screen background"
+      ]
+    },
+    "scene_b": {
+      "usage": "conversation empty state rotation slot 2",
+      "rotation_group": [
+        "portrait_room",
+        "scene_a",
+        "scene_b"
+      ],
+      "rotation_rule": "never repeat the same illustration twice inside one session",
+      "max_height_dp": 200,
+      "width": "fillMaxWidth",
+      "placement": "inside the scrolling content flow",
+      "forbidden": [
+        "overlay on top of content",
+        "full-screen background"
+      ]
+    },
+    "thumb": {
+      "usage": "small icon for conversation / workspace cards",
+      "max_height_dp": 72,
+      "width": "fillMaxWidth",
+      "placement": "56-72dp square, circular or 24dp rounded corner crop, subject centred",
+      "forbidden": [
+        "large background",
+        "full-screen background"
+      ]
+    }
+  },
+  "portrait_qa": {
+    "content_rating": "suggestive-non-explicit",
+    "reviewed_by": "generation agent: one visual pass per file against the explicit boundary list",
+    "rejected_generations_total": 19,
+    "rejection_rules": [
+      "nudity or exposed anatomy",
+      "clothing pulled open / off-shoulder",
+      "childlike proportions",
+      "framing that cannot crop to the UI slot",
+      "blank / noise / no-subject output"
+    ]
+  }
+}

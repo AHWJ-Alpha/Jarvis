@@ -9,3 +9,16 @@ captures/
 .cxx/
 .kotlin/
 .build/
+# scratch / verification artifacts
+.paper-shots/
+.verify/
+.tmp/
+shot/
+shots/
+artwork/final/
+artwork/device-emu/
+artwork/real/
+artwork/real2/
+*.out.log
+*.err.log
+ui3.xml

@@ -94,9 +94,19 @@ internal enum class JarvisTheme(
 
 internal val LocalJarvisTheme = staticCompositionLocalOf { JarvisTheme.Deep }
 
+/**
+ * 品牌头像。
+ *
+ * @param avatarRes 头像图源。外壳必须按当前主题模块（JarvisThemeModule.artwork.avatar）传入；
+ *   缺省回退旧枚举 [LocalJarvisTheme]，只服务尚未改写的旧调用点，不再作为主题视觉来源。
+ */
 @Composable
-internal fun JarvisBrandMark(modifier: Modifier = Modifier, size: Int = 40) {
-    Image(painterResource(LocalJarvisTheme.current.avatar), contentDescription = null,
+internal fun JarvisBrandMark(
+    modifier: Modifier = Modifier,
+    size: Int = 40,
+    avatarRes: Int = LocalJarvisTheme.current.avatar
+) {
+    Image(painterResource(avatarRes), contentDescription = null,
         modifier = modifier.size(size.dp).clip(RoundedCornerShape((size * .32f).dp)),
         contentScale = ContentScale.Crop)
 }

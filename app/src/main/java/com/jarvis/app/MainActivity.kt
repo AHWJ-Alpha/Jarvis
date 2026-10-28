@@ -1,5 +1,7 @@
 package com.jarvis.app
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
@@ -24,7 +26,6 @@ import com.jarvis.app.runtime.BootstrapReport
 import com.jarvis.app.runtime.OpenClawProcessManager
 import com.jarvis.app.runtime.RuntimeState
 import com.jarvis.app.runtime.RuntimeRecoveryManager
-import com.jarvis.app.runtime.JarvisBridgeServer
 import com.jarvis.app.runtime.JarvisBridgeService
 import com.jarvis.app.runtime.DeviceTaskCoordinator
 import com.jarvis.app.runtime.ConversationStore
@@ -40,6 +41,10 @@ import com.jarvis.app.runtime.RuntimeToolManager
 import com.jarvis.app.runtime.RuntimeToolStatus
 import com.jarvis.app.runtime.ToolSource
 import com.jarvis.app.runtime.ModelConnectionChecker
+import com.jarvis.app.runtime.CapabilityResult
+import com.jarvis.app.runtime.OperationHost
+import com.jarvis.app.runtime.OperationMemory
+import com.jarvis.app.runtime.RemoteAccessManager
 import com.jarvis.app.runtime.AccessibilityStartupManager
 import com.jarvis.app.runtime.AccessibilityController
 import com.jarvis.app.runtime.FloatingAssistantService
@@ -47,17 +52,18 @@ import com.jarvis.app.runtime.FloatingLaunchAction
 import com.jarvis.app.runtime.FloatingAssistantPreferences
 import com.jarvis.app.runtime.FloatingShape
 import com.jarvis.app.runtime.FloatingGestureAction
+import com.jarvis.app.runtime.AutomationDraft
 import com.jarvis.app.runtime.AutomationManager
 import com.jarvis.app.runtime.AutomationKind
 import com.jarvis.app.runtime.AutomationRule
-import com.jarvis.app.runtime.AutomationEvent
 import android.content.Intent
 import android.provider.Settings
+import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -134,9 +140,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -147,7 +153,6 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalView
 import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -172,6 +177,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarvis.ui.shell.JarvisShell
+import com.jarvis.ui.shell.ShellChrome
+import com.jarvis.ui.theme.AutomationRuleView
+import com.jarvis.ui.theme.ChatUiContext
+import com.jarvis.ui.theme.ChoiceOption
+import com.jarvis.ui.theme.FloatingAssistantView
+import com.jarvis.ui.theme.JarvisThemeRegistry
+import com.jarvis.ui.theme.LegacyThemeMigration
+import com.jarvis.ui.theme.MemoryEntryView
+import com.jarvis.ui.theme.PluginView
+import com.jarvis.ui.theme.PersonaSourceView
+import com.jarvis.ui.theme.RecentEventView
+import com.jarvis.ui.theme.RootModeOption
+import com.jarvis.ui.theme.RuntimeToolView
+import com.jarvis.ui.theme.SettingsUiContext
+import com.jarvis.ui.theme.ShellUiContext
+import com.jarvis.ui.theme.TasksUiContext
+import com.jarvis.ui.theme.ThemeMode
+import com.jarvis.ui.theme.ThemeModeOverride
+import com.jarvis.ui.theme.ThemeOptionView
+import com.jarvis.ui.theme.ToolStatusView
+import com.jarvis.ui.theme.WorkspaceFileView
+import com.jarvis.ui.theme.WorkspaceUiContext
+import com.jarvis.ui.theme.forMode
+import com.jarvis.ui.theme.resolveMode
+import com.jarvis.ui.tokens.JarvisMotion
 
 /** Gives every interactive control a short, consistent press response. */
 private fun Modifier.jarvisPressScale(): Modifier = composed {
@@ -336,6 +367,107 @@ private fun parseAiClassroomConfig(raw: String, current: JarvisConfig): JarvisCo
     return JSONObject(trimmed).toJarvisConfig(current)
 }
 
+private const val WORKSPACE_PREFS = "jarvis_workspaces"
+private const val MAX_WORKSPACE_FILES = 200
+private const val MAX_PREVIEW_CHARS = 4000
+private const val MAX_PREVIEW_BYTES = 256L * 1024L
+private val PREVIEWABLE_EXTENSIONS = setOf(
+    "txt", "md", "markdown", "json", "jsonl", "csv", "log", "xml", "yaml", "yml", "ini", "toml",
+    "properties", "gradle", "kts", "kt", "java", "py", "js", "ts", "sh", "html", "css"
+)
+
+/** 目录显示名：SAF 树 id 的末段（primary:Download/Jarvis -> Jarvis）。 */
+private fun directoryLabel(uri: Uri): String {
+    val treeId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull().orEmpty()
+    val tail = treeId.substringAfterLast(':').trim('/').substringAfterLast('/')
+    return tail.ifBlank { "已绑定目录" }
+}
+
+/** 是否仍持有该目录的持久化读权限（重启后依然有效才算）。 */
+private fun hasDirectoryPermission(context: Context, dirUri: String): Boolean {
+    if (dirUri.isBlank()) return false
+    return runCatching {
+        context.contentResolver.persistedUriPermissions.any { it.uri.toString() == dirUri && it.isReadPermission }
+    }.getOrDefault(false)
+}
+
+/** 只读扫描结果：文件清单 + 一句提示。 */
+private data class WorkspaceFileScan(val files: List<WorkspaceFileView>, val notice: String)
+
+private fun readPreviewHead(reader: java.io.Reader): String {
+    val buffer = CharArray(MAX_PREVIEW_CHARS)
+    var filled = 0
+    while (filled < buffer.size) {
+        val read = runCatching { reader.read(buffer, filled, buffer.size - filled) }.getOrDefault(-1)
+        if (read <= 0) break
+        filled += read
+    }
+    return String(buffer, 0, filled)
+}
+
+/**
+ * 用 ContentResolver 列 dirUri 下一层，最多 [MAX_WORKSPACE_FILES] 条，全程只读。
+ * 文本文件（文本 MIME 或常见扩展名，大小 < 256KB）带 previewText，最多 [MAX_PREVIEW_CHARS] 字符。
+ */
+private suspend fun scanWorkspaceFiles(context: Context, dirUri: String): WorkspaceFileScan =
+    withContext(Dispatchers.IO) {
+        if (dirUri.isBlank()) return@withContext WorkspaceFileScan(emptyList(), "")
+        val tree = runCatching { Uri.parse(dirUri) }.getOrNull()
+            ?: return@withContext WorkspaceFileScan(emptyList(), "目录地址无效，请重新选择")
+        if (!hasDirectoryPermission(context, dirUri)) {
+            return@withContext WorkspaceFileScan(emptyList(), "目录读权限已失效，请重新选择该目录")
+        }
+        val resolver = context.contentResolver
+        val childrenUri = runCatching {
+            DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        }.getOrNull() ?: return@withContext WorkspaceFileScan(emptyList(), "无法解析该目录")
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID
+        )
+        runCatching {
+            val items = ArrayList<WorkspaceFileView>()
+            resolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                while (cursor.moveToNext() && items.size < MAX_WORKSPACE_FILES) {
+                    val name = cursor.getString(0) ?: continue
+                    val mime = cursor.getString(1)
+                    val size = if (cursor.isNull(2)) -1L else cursor.getLong(2)
+                    val modified = if (cursor.isNull(3)) 0L else cursor.getLong(3)
+                    val documentId = cursor.getString(4) ?: continue
+                    val isDirectory = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    val textish = mime?.startsWith("text/") == true ||
+                        name.substringAfterLast('.', "").lowercase() in PREVIEWABLE_EXTENSIONS
+                    val previewable = !isDirectory && textish && (size <= 0L || size < MAX_PREVIEW_BYTES)
+                    val previewText = if (previewable) runCatching {
+                        val documentUri = DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
+                        resolver.openInputStream(documentUri)?.let { input ->
+                            input.bufferedReader().use { readPreviewHead(it) }
+                        }
+                    }.getOrNull().orEmpty() else ""
+                    items += WorkspaceFileView(
+                        name = name,
+                        sizeBytes = size,
+                        isDirectory = isDirectory,
+                        lastModified = modified,
+                        previewable = previewText.isNotEmpty(),
+                        previewText = previewText
+                    )
+                }
+            }
+            items.sortedWith(
+                compareByDescending<WorkspaceFileView> { it.isDirectory }.thenBy { it.name.lowercase() }
+            )
+        }.fold(
+            onSuccess = { list ->
+                WorkspaceFileScan(list, if (list.size >= MAX_WORKSPACE_FILES) "仅显示前 ${MAX_WORKSPACE_FILES} 项" else "")
+            },
+            onFailure = { error -> WorkspaceFileScan(emptyList(), "读取目录失败：${error.message ?: "未知错误"}") }
+        )
+    }
+
 class MainActivity : ComponentActivity() {
     private val quickTaskRequests = Channel<String>(Channel.BUFFERED)
     private val floatingActions = Channel<FloatingLaunchAction>(Channel.BUFFERED)
@@ -409,6 +541,18 @@ private fun initialBootstrapReport(context: Context): BootstrapReport = Bootstra
     message = "正在检查 OpenClaw 运行时…"
 )
 
+/**
+ * 操作记忆的只读宿主。设置页只用 execute(action=find/forget) 读列表、删记录，
+ * 这两个分支不调用 [OperationHost]，其余能力一律拒绝，避免从界面误触发设备操作。
+ */
+private object MemoryReadOnlyHost : OperationHost {
+    override fun call(capability: String, arguments: JSONObject): CapabilityResult =
+        CapabilityResult(false, "设置页只读，不能执行设备操作")
+    override fun inspect(): JSONObject = JSONObject()
+    override fun version(packageName: String): String? = null
+    override fun fileState(path: String): JSONObject? = null
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<FloatingLaunchAction>) {
@@ -436,19 +580,32 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
     }
     var config by remember { mutableStateOf(store.load()) }
     val conversationStore = remember { ConversationStore(context) }
-    var conversations by remember { mutableStateOf(conversationStore.loadOrCreate()) }
+    val workspacePrefs = remember { context.getSharedPreferences(WORKSPACE_PREFS, Context.MODE_PRIVATE) }
+    // 一次性迁移：旧版把归档对话 id 存在偏好里，现在落到 ChatSession.archivedAt（conversations.json）。
+    // 迁移成功后偏好键被清空，因此重复启动/重组只会执行 0 次迁移。
+    var conversations by remember {
+        mutableStateOf(
+            conversationStore.loadOrCreate().let { loaded ->
+                if (conversationStore.migrateArchivedFromPreferences(workspacePrefs) > 0) {
+                    conversationStore.loadOrCreate()
+                } else loaded
+            }
+        )
+    }
     val workspaceStore = remember { WorkspaceStore(context) }
     var workspaces by remember { mutableStateOf(workspaceStore.load(conversations.map { it.workspace })) }
+    // 工作区归档/目录/文件视图状态。
+    // 「显示已归档」开关同时作用于工作区列表与对话列表；对话归档标志落在 conversations.json，
+    // 不复用偏好（旧偏好在启动时一次性迁移，见 migrateArchivedFromPreferences）。
+    var showArchived by rememberSaveable { mutableStateOf(false) }
+    var workspaceFiles by remember { mutableStateOf<List<WorkspaceFileView>>(emptyList()) }
+    var workspaceFilesLoading by remember { mutableStateOf(false) }
+    var workspaceFilesNotice by remember { mutableStateOf("") }
+    var workspaceDirReady by remember { mutableStateOf(false) }
+    var pendingDirectoryWorkspace by remember { mutableStateOf<String?>(null) }
     var activeConversationId by rememberSaveable { mutableStateOf(conversationStore.activeSessionId(conversations)) }
-    val view = LocalView.current
-    SideEffect {
-        (context as? ComponentActivity)?.window?.let { window ->
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !config.theme.dark
-                isAppearanceLightNavigationBars = !config.theme.dark
-            }
-        }
-    }
+    // 状态栏/导航栏外观由 JarvisShell 按当前主题模块的明暗统一设置（旧枚举 config.theme.dark 不再参与），
+    // 避免两处写入互相覆盖。
     var tab by rememberSaveable { mutableStateOf(JarvisTab.Chat) }
     var draft by rememberSaveable { mutableStateOf("") }
     var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -512,6 +669,24 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
         config = store.load()
     }
 
+    // 当前工作区绑定的 SAF 目录发生变化（切换工作区 / 绑定新目录 / 解除绑定）时重读第一层文件。
+    val selectedWorkspaceDirUri = workspaces.firstOrNull { it.name == workspaceName }?.dirUri.orEmpty()
+    LaunchedEffect(workspaceName, selectedWorkspaceDirUri) {
+        workspaceDirReady = hasDirectoryPermission(context, selectedWorkspaceDirUri)
+        if (selectedWorkspaceDirUri.isBlank()) {
+            workspaceFiles = emptyList()
+            workspaceFilesLoading = false
+            workspaceFilesNotice = ""
+            return@LaunchedEffect
+        }
+        workspaceFilesLoading = true
+        val scan = scanWorkspaceFiles(context, selectedWorkspaceDirUri)
+        workspaceFiles = scan.files
+        workspaceFilesNotice = scan.notice
+        workspaceFilesLoading = false
+        workspaceDirReady = hasDirectoryPermission(context, selectedWorkspaceDirUri)
+    }
+
     fun update(next: JarvisConfig) {
         val themeChanged = next.theme != config.theme
         config = next
@@ -560,6 +735,111 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
             conversationStore.save(conversations, activeConversationId)
         }
         if (wasSelected || previousName == null) selectWorkspace(profile.name)
+    }
+
+    /** 归档/还原工作区：只改 archived 标志，档案与对话全部保留。 */
+    fun setWorkspaceArchived(name: String, archived: Boolean) {
+        val profile = workspaces.firstOrNull { it.name == name } ?: return
+        if (archived && name == WorkspaceProfile.DEFAULT_NAME) {
+            workspaceFilesNotice = "默认工作区不能归档，请先切换到别的工作区"
+            return
+        }
+        if (profile.archived != archived) {
+            workspaces = workspaces.map { if (it.name == name) it.copy(archived = archived) else it }
+            workspaceStore.save(workspaces)
+        }
+        workspaceFilesNotice = if (archived) "已归档「${profile.name}」，数据保留" else "已还原「${profile.name}」"
+        if (archived && workspaceName == name) {
+            val fallback = workspaces.firstOrNull { it.name != name && !it.archived }?.name
+                ?: WorkspaceProfile.DEFAULT_NAME
+            selectWorkspace(fallback)
+        }
+    }
+
+    /** 目录选择器回调落地：持久化读权限 + 写回 dirUri/dirLabel。 */
+    fun bindWorkspaceDirectory(name: String, uri: Uri?) {
+        val profile = workspaces.firstOrNull { it.name == name } ?: return
+        if (uri == null) {
+            workspaceFilesNotice = "未选择目录，绑定未变更"
+            return
+        }
+        val persisted = runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }.isSuccess
+        val label = directoryLabel(uri)
+        saveWorkspace(profile.copy(dirUri = uri.toString(), dirLabel = label), previousName = profile.name)
+        workspaceFilesNotice = if (persisted) "已绑定目录「$label」" else "目录已记录，但系统未授予长期读权限，请重新选择"
+    }
+
+    fun clearWorkspaceDirectory(name: String) {
+        val profile = workspaces.firstOrNull { it.name == name } ?: return
+        if (!profile.hasDirectory) {
+            workspaceFilesNotice = "该工作区还没有绑定目录"
+            return
+        }
+        saveWorkspace(profile.copy(dirUri = "", dirLabel = ""), previousName = profile.name)
+        workspaceFilesNotice = "已解除目录绑定，磁盘文件未改动"
+    }
+
+    fun deleteConversation(id: String) {
+        val remaining = conversations.filterNot { it.id == id }
+        val next = remaining.ifEmpty { listOf(ChatSession(workspace = workspaceName)) }
+        conversations = next
+        val nextActive = if (activeConversationId == id) next.first().id else activeConversationId
+        activeConversationId = nextActive
+        conversationStore.save(next, nextActive)
+    }
+
+    fun renameConversation(id: String, title: String) {
+        val clean = title.trim().take(60)
+        if (clean.isEmpty()) return
+        conversations = conversations.map { if (it.id == id) it.copy(title = clean) else it }
+        conversationStore.save(conversations, activeConversationId)
+    }
+
+    fun moveConversation(id: String, targetWorkspace: String) {
+        val target = workspaces.firstOrNull { it.name == targetWorkspace } ?: return
+        val moved = conversations.map {
+            if (it.id == id) it.copy(workspace = target.name, updatedAt = System.currentTimeMillis()) else it
+        }
+        conversations = moved
+        if (activeConversationId == id) workspaceName = target.name
+        conversationStore.save(moved, activeConversationId)
+    }
+
+    /** 归档/还原对话：archivedAt 落进 conversations.json，消息本身不动。 */
+    fun setConversationArchived(id: String, archived: Boolean) {
+        if (conversations.none { it.id == id }) return
+        val updated = conversationStore.setArchived(conversations, id, archived)
+        conversations = updated
+        conversationStore.save(updated, activeConversationId)
+        if (archived && activeConversationId == id) {
+            val next = ConversationStore.visibleSessions(updated).firstOrNull { it.id != id }
+            if (next != null) {
+                activeConversationId = next.id
+                workspaceName = next.workspace
+                draft = ""
+                editingMessageId = null
+                conversationStore.save(conversations, next.id)
+            }
+        }
+    }
+
+    val workspaceDirPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        val target = pendingDirectoryWorkspace
+        pendingDirectoryWorkspace = null
+        if (target != null) bindWorkspaceDirectory(target, uri)
+    }
+
+    fun pickWorkspaceDirectory(name: String) {
+        pendingDirectoryWorkspace = name
+        runCatching { workspaceDirPickerLauncher.launch(null as Uri?) }
+            .onFailure {
+                pendingDirectoryWorkspace = null
+                workspaceFilesNotice = "无法打开目录选择器：${it.message ?: "系统不支持"}"
+            }
     }
 
     fun createConversation() {
@@ -739,97 +1019,658 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
             .onFailure { error -> configNotice = "导出失败：${error.message ?: "无法写入文件"}" }
     }
 
-    Crossfade(targetState = config.theme, animationSpec = tween(300), label = "theme-transition") { activeTheme ->
-    CompositionLocalProvider(LocalJarvisTheme provides activeTheme) {
-    MaterialTheme(colorScheme = activeTheme.colorScheme(), shapes = androidx.compose.material3.Shapes(
-        small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp)
-    )) {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-                        navigationIcon = {
-                            IconButton(onClick = { if (isLandscape) showLandscapeRail = !showLandscapeRail else showNavigation = !showNavigation }, modifier = Modifier.jarvisPressScale()) {
-                                Icon(Icons.Default.Menu, contentDescription = if (isLandscape) "收起或展开左侧菜单" else "打开导航")
-                            }
-                        },
-                        title = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                            JarvisBrandMark(size = 34)
-                            Spacer(Modifier.width(12.dp))
-                            Column(horizontalAlignment = Alignment.Start) {
-                                Text(activeConversation.title.ifBlank { workspaceName }, maxLines = 1, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    text = "Jarvis · ${if (config.rootMode == RootMode.Full) "完全模式" else "个人助理"}",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            }
-                        },
-                        actions = {
-                            if (config.restrictionMode) {
-                                Icon(Icons.Default.Shield, contentDescription = "限制模式", tint = MaterialTheme.colorScheme.primary)
-                            } else {
-                                Icon(Icons.Default.Warning, contentDescription = "限制模式已关闭", tint = MaterialTheme.colorScheme.error)
-                            }
-                            Spacer(Modifier.width(12.dp))
-                        }
+    // ── 阶段 3B 主题装配：theme_id 优先，旧 theme(Int) 作为回退，只有装配层写 theme_id ──────────
+    val themePrefs = remember { context.getSharedPreferences("jarvis_config", Context.MODE_PRIVATE) }
+
+    fun resolveThemeId(): String {
+        val stored = themePrefs.getString("theme_id", null)
+        if (stored != null && JarvisThemeRegistry.all.any { it.id == stored }) return stored
+        val migrated = LegacyThemeMigration.legacyOrdinalToThemeId(themePrefs.getInt("theme", 0))
+        themePrefs.edit().putString("theme_id", migrated).apply()
+        return migrated
+    }
+
+    var themeId by remember { mutableStateOf(resolveThemeId()) }
+    val activeModule = JarvisThemeRegistry.all.firstOrNull { it.id == themeId } ?: JarvisThemeRegistry.default()
+
+    // ── 明暗双模式：mode_override（follow/light/dark）+ 系统明暗 -> 实际生效的明暗 ──────────────
+    /** 读持久化明暗偏好；键缺失（老用户只有 theme_id）或读取失败一律回落 follow，不动其主题选择。 */
+    fun resolveModeOverride(): ThemeModeOverride =
+        ThemeModeOverride.fromKey(runCatching { themePrefs.getString("mode_override", null) }.getOrNull())
+
+    var modeOverride by remember { mutableStateOf(resolveModeOverride()) }
+    // isSystemInDarkTheme() 跟随配置变化：系统切明/切暗会触发重组，effectiveMode 随之更新。
+    val effectiveMode = resolveMode(modeOverride, isSystemInDarkTheme())
+
+    /** 明暗偏好权威入口：写 mode_override，并让浮窗立即按新明暗重绘。 */
+    fun switchModeOverride(next: ThemeModeOverride) {
+        themePrefs.edit().putString("mode_override", next.key).apply()
+        modeOverride = next
+        if (themePrefs.getBoolean("floatingAssistantEnabled", false)) FloatingAssistantService.refresh(context)
+    }
+
+    /** 主题选择的权威入口：只认 registry 里的 id，能覆盖全部 5 套。 */
+    fun switchThemeById(id: String) {
+        if (JarvisThemeRegistry.all.none { it.id == id }) return
+        themePrefs.edit().putString("theme_id", id).apply()
+        themeId = id
+        // 兜底：浮窗只在自己收到事件时才比对 theme_id，这里主动推一次刷新让头像/配色立即跟随。
+        if (themePrefs.getBoolean("floatingAssistantEnabled", false)) FloatingAssistantService.refresh(context)
+        // 5 套主题与旧枚举一一对应：只有落在 legacy 顺序里时才回写 config.theme，
+        // 否则 config.theme 原样保留（它现在只服务于未回填的旧界面配色）。
+        val legacyOrdinal = LegacyThemeMigration.legacyThemeOrder.indexOf(id)
+        if (legacyOrdinal >= 0) {
+            JarvisTheme.entries.getOrNull(legacyOrdinal)?.let { legacy ->
+                if (legacy != config.theme) update(config.copy(theme = legacy))
+            }
+        }
+    }
+
+    /** 旧枚举通道：映射到同一套 id 逻辑，避免两条切换路径写出不同的 theme_id。 */
+    fun switchTheme(legacy: JarvisTheme) {
+        switchThemeById(LegacyThemeMigration.legacyOrdinalToThemeId(legacy.ordinal))
+    }
+
+    // ── 任务页状态：由外壳持有，主题屏只读（主题不再自己 new AutomationManager 读授权态）───────
+    val automationManager = remember { AutomationManager(context) }
+    var taskRules by remember { mutableStateOf(automationManager.list()) }
+    var taskEvents by remember { mutableStateOf(automationManager.recentEvents()) }
+    var taskNotice by remember { mutableStateOf("") }
+    var taskEditingRuleId by remember { mutableStateOf<String?>(null) }
+    var taskArtistDraft by remember { mutableStateOf("") }
+    var taskReplyDraft by remember { mutableStateOf("") }
+
+    // 任务页「直接新建草案」表单状态：与聊天里 parse 后自动创建并存，两条路径互不影响。
+    var ruleCreating by remember { mutableStateOf(false) }
+    var ruleDraftTitle by remember { mutableStateOf("") }
+    var ruleDraftKindKey by remember { mutableStateOf(AutomationKind.BILIBILI_REPLY.name) }
+    var ruleDraftPrompt by remember { mutableStateOf("") }
+    var ruleDraftArtist by remember { mutableStateOf("") }
+    var ruleDraftError by remember { mutableStateOf("") }
+    val ruleKindOptions = remember {
+        AutomationKind.entries.map { ChoiceOption(key = it.name, label = it.label) }
+    }
+    var taskNotificationAccess by remember { mutableStateOf(automationManager.hasNotificationAccess()) }
+    var taskAccessibility by remember { mutableStateOf(AccessibilityController.service != null) }
+
+    fun refreshTasks() {
+        taskRules = automationManager.list()
+        taskEvents = automationManager.recentEvents()
+        taskNotificationAccess = automationManager.hasNotificationAccess()
+        taskAccessibility = AccessibilityController.service != null
+    }
+
+    fun resetRuleDraftForm() {
+        ruleCreating = false
+        ruleDraftTitle = ""
+        ruleDraftKindKey = AutomationKind.BILIBILI_REPLY.name
+        ruleDraftPrompt = ""
+        ruleDraftArtist = ""
+        ruleDraftError = ""
+    }
+
+    /** 任务页直接新建草案的落库入口：标题/触发要求必填，缺失写 ruleDraftError，不静默失败。 */
+    fun submitRuleDraft() {
+        val title = ruleDraftTitle.trim()
+        val prompt = ruleDraftPrompt.trim()
+        val kind = AutomationKind.entries.firstOrNull { it.name == ruleDraftKindKey } ?: AutomationKind.BILIBILI_REPLY
+        val missing = when {
+            title.isEmpty() -> "请先填写草案标题"
+            prompt.isEmpty() -> "请先填写触发要求（什么通知该触发、要回复什么）"
+            else -> null
+        }
+        if (missing != null) {
+            ruleDraftError = missing
+            return
+        }
+        runCatching {
+            automationManager.create(
+                AutomationDraft(kind = kind, title = title, sourcePrompt = prompt, artist = ruleDraftArtist.trim())
+            )
+        }.onSuccess {
+            ruleDraftError = ""
+            ruleCreating = false
+            ruleDraftTitle = ""
+            ruleDraftPrompt = ""
+            ruleDraftArtist = ""
+            taskNotice = "已创建草案「$title」，默认暂停，请检查后启用"
+            refreshTasks()
+        }.onFailure { error ->
+            ruleDraftError = "创建失败：${error.message ?: "无法写入自动化规则"}"
+        }
+    }
+
+    fun ruleView(rule: AutomationRule) = AutomationRuleView(
+        id = rule.id,
+        title = rule.title,
+        kindKey = rule.kind.name,
+        kindLabel = rule.kind.label,
+        sourcePrompt = rule.sourcePrompt,
+        artist = rule.artist,
+        replyInstruction = rule.replyInstruction,
+        enabled = rule.enabled,
+        lastResult = rule.lastResult,
+        lastRunAt = rule.lastRunAt,
+        readiness = if (rule.enabled) null else automationManager.readiness(rule)
+    )
+
+    LaunchedEffect(tab) {
+        if (tab != JarvisTab.Tasks) return@LaunchedEffect
+        while (true) {
+            refreshTasks()
+            delay(1500)
+        }
+    }
+
+    // ── 设置页：工具检查 / 悬浮助手 / 保存并应用 ─────────────────────────────────────────
+    val runtimeToolManager = remember { RuntimeToolManager(context) }
+    var toolStatuses by remember { mutableStateOf<List<RuntimeToolStatus>>(emptyList()) }
+    var checkingTools by remember { mutableStateOf(true) }
+    var toolNotice by remember { mutableStateOf("") }
+    var applying by remember { mutableStateOf(false) }
+    var applyNotice by remember { mutableStateOf("") }
+    var applyFailed by remember { mutableStateOf(false) }
+    var showRuntimeTools by remember { mutableStateOf(false) }
+
+    fun refreshTools() {
+        checkingTools = true
+        runtimeScope.launch {
+            toolStatuses = withContext(Dispatchers.IO) { runtimeToolManager.inspect() }
+            checkingTools = false
+        }
+    }
+
+    LaunchedEffect(Unit) { refreshTools() }
+
+    val accessibilityStartup = remember { AccessibilityStartupManager(context) }
+    var accessibilityAutoConnect by remember { mutableStateOf(accessibilityStartup.autoConnect) }
+    var floatingPreferences by remember { mutableStateOf(FloatingAssistantPreferences.load(context)) }
+    var floatingEnabled by remember { mutableStateOf(themePrefs.getBoolean("floatingAssistantEnabled", false)) }
+
+    fun saveFloatingPreferences(next: FloatingAssistantPreferences) {
+        floatingPreferences = next
+        next.save(context)
+        FloatingAssistantService.refresh(context)
+    }
+
+    fun setFloatingEnabled(enabled: Boolean) {
+        floatingEnabled = enabled
+        themePrefs.edit().putBoolean("floatingAssistantEnabled", enabled).apply()
+        FloatingAssistantService.refresh(context)
+    }
+
+    // ── P1-1 远程访问：RemoteAccessManager 只存开关与配对令牌，HTTP 监听在 Bridge 服务里按 ACTION_SYNC_REMOTE 同步 ──
+    val remoteAccess = remember { RemoteAccessManager(context) }
+    var remoteServerEnabled by remember { mutableStateOf(remoteAccess.enabled) }
+    var remotePairing by remember { mutableStateOf(remoteAccess.currentPairingInfo()) }
+    var remoteDeviceControl by remember { mutableStateOf(remoteAccess.remoteDeviceControl) }
+    var remoteUrls by remember { mutableStateOf(remoteAccess.localUrls()) }
+
+    fun syncRemoteServer() {
+        remoteUrls = remoteAccess.localUrls()
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, JarvisBridgeService::class.java).setAction(JarvisBridgeService.ACTION_SYNC_REMOTE)
+            )
+        }
+    }
+
+    // ── P1-1 社区插件：list/install/uninstall/toggle 都走 CommunityPluginManager ────────────
+    val communityPlugins = remember { CommunityPluginManager(context) }
+    var pluginList by remember { mutableStateOf(communityPlugins.list()) }
+    var pluginNotice by remember { mutableStateOf("") }
+    var pluginBusy by remember { mutableStateOf(false) }
+
+    fun refreshPlugins() {
+        runCatching { communityPlugins.list() }
+            .onSuccess { pluginList = it }
+            .onFailure { pluginNotice = "读取插件列表失败：${it.message ?: "插件目录不可用"}" }
+    }
+
+    fun installPlugin(raw: String) {
+        if (pluginBusy) return
+        pluginBusy = true
+        runtimeScope.launch {
+            pluginNotice = withContext(Dispatchers.IO) {
+                runCatching { communityPlugins.installGenerated(parseGeneratedPlugin(raw)) }
+                    .fold(
+                        onSuccess = { "已安装「${it.name}」，默认停用；确认来源后再启用。" },
+                        onFailure = { "安装失败：${it.message ?: "插件草稿无效"}" }
                     )
-                },
-                bottomBar = {}
-            ) { padding ->
-                if (isLandscape) {
-                    Row(Modifier.fillMaxSize().padding(padding)) {
-                        AnimatedVisibility(visible = showLandscapeRail, enter = slideInHorizontally(initialOffsetX = { -it }, animationSpec = tween(220)), exit = slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(220))) {
-                            Row { SessionRail(tab, workspaceName, workspaces, conversations, activeConversationId, onTab = { tab = it }, onWorkspace = ::selectWorkspace, onSelectConversation = ::selectConversation, onNewConversation = ::createConversation, modifier = Modifier.width(280.dp)); VerticalDivider() }
-                        }
-                        Box(Modifier.weight(1f)) { Crossfade(targetState = tab, animationSpec = tween(220), label = "landscape-content") { selectedTab -> MainContent(selectedTab, padding = PaddingValues(0.dp), activeConversation.id, messages, draft, sending, onDraftChange = { draft = it }, onSend = ::sendPrompt, onVoiceInput = ::startSpeechInput, speechNotice = speechNotice, onNewConversation = ::createConversation, onBranch = ::createBranch, onUndoLatest = ::undoLatestTurn, onEditLatest = ::editLatestUserMessage, onCancelEdit = ::cancelEdit, editingLatest = editingMessageId != null, canUndoLatest = messages.isNotEmpty() && !sending, canEditLatest = messages.any { it.role == ChatMessageRole.USER } && !sending, workspaces = workspaces, conversations = conversations, selectedWorkspace = workspaceName, onSelectWorkspace = ::selectWorkspace, onSaveWorkspace = ::saveWorkspace, config = config, bootstrapReport = bootstrapReport, runtimeMessage = runtimeMessage, onConfig = ::update, onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() }, onRecovery = { showRecovery = true }, onStartRuntime = { runtimeScope.launch { runtimeMessage = processManager.start().message; bootstrapReport = bootstrap.bootstrap() } }, onStopRuntime = { runtimeScope.launch { processManager.stop(); runtimeMessage = "OpenClaw Gateway 已停止"; bootstrapReport = bootstrap.bootstrap() } }, onRootModeRequest = { pendingRootMode = it; if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it)) }, configNotice = configNotice, onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") }) } }
-                    }
-                } else {
-                    Crossfade(targetState = tab, animationSpec = tween(220), label = "portrait-content") { selectedTab -> when (selectedTab) {
-                    JarvisTab.Chat -> ChatScreen(
-                        padding = padding,
+            }
+            pluginBusy = false
+            refreshPlugins()
+        }
+    }
+
+    fun uninstallPlugin(id: String) {
+        if (pluginBusy) return
+        pluginBusy = true
+        runtimeScope.launch {
+            pluginNotice = withContext(Dispatchers.IO) {
+                runCatching { communityPlugins.remove(id) }
+                    .fold(onSuccess = { "已卸载插件" }, onFailure = { "卸载失败：${it.message ?: "插件目录不可用"}" })
+            }
+            pluginBusy = false
+            refreshPlugins()
+        }
+    }
+
+    fun togglePlugin(id: String, enabled: Boolean) {
+        if (pluginBusy) return
+        pluginBusy = true
+        runtimeScope.launch {
+            pluginNotice = withContext(Dispatchers.IO) {
+                runCatching { communityPlugins.setEnabled(id, enabled) }
+                    .fold(
+                        onSuccess = { if (enabled) "插件已启用" else "插件已停用" },
+                        onFailure = { "切换失败：${it.message ?: "插件清单不合法"}" }
+                    )
+            }
+            pluginBusy = false
+            refreshPlugins()
+        }
+    }
+
+    // ── P1-1 操作记忆：只读宿主，列表/删除走 OperationMemory.execute(find/forget) ────────────
+    val operationMemory = remember { OperationMemory.at(context.filesDir) }
+    var memoryEntries by remember { mutableStateOf<List<MemoryEntryView>>(emptyList()) }
+    var memoryStatusText by remember { mutableStateOf("") }
+
+    fun refreshMemory() {
+        memoryStatusText = runCatching { operationMemory.summary() }
+            .getOrElse { "操作记忆暂不可用：${it.message}" }
+        memoryEntries = runCatching {
+            val found = operationMemory.execute(
+                JSONObject().put("action", "find").put("query", ""),
+                MemoryReadOnlyHost
+            )
+            val recipes = found.data.optJSONArray("recipes") ?: JSONArray()
+            (0 until recipes.length()).map { index ->
+                val item = recipes.optJSONObject(index) ?: JSONObject()
+                MemoryEntryView(
+                    id = item.optString("id"),
+                    title = item.optString("title"),
+                    ready = item.optString("status") == "ready",
+                    successes = item.optInt("successes"),
+                    failures = item.optInt("failures")
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    LaunchedEffect(Unit) { refreshMemory() }
+
+    fun applySettings(verify: Boolean) {
+        if (applying) return
+        val snapshot = config
+        if (!store.save(snapshot, durable = true)) {
+            applyFailed = true
+            applyNotice = "保存失败，请检查手机存储空间。"
+            return
+        }
+        applying = true
+        applyFailed = false
+        applyNotice = "配置已保存，正在应用到 OpenClaw…"
+        runtimeScope.launch {
+            runCatching { withContext(Dispatchers.IO) { processManager.start() } }
+                .onSuccess { result ->
+                    applyFailed = !result.started
+                    applyNotice = if (result.started) "配置已保存并生效。" else "配置已保存；OpenClaw 尚未就绪：${result.message}"
+                }
+                .onFailure { error ->
+                    applyFailed = true
+                    applyNotice = "配置已保存；应用失败：${error.message ?: "请检查 Gateway 状态"}"
+                }
+            if (verify) {
+                val check = withContext(Dispatchers.IO) {
+                    ModelConnectionChecker.test(snapshot.modelBaseUrl, snapshot.modelApiKey, snapshot.modelName)
+                }
+                if (!check.ok) applyFailed = true
+                applyNotice = applyNotice + " 模型验证：${check.message}"
+            }
+            bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() }
+            applying = false
+        }
+    }
+
+    // 四个 UiContext 都携带同一份 shell 上下文，主题屏据此接自己的底栏（P0-1）。
+    val shellContext = ShellUiContext(
+        tabIndex = tab.ordinal,
+        tabs = ShellUiContext.DefaultTabs,
+        onNavigate = { index ->
+            JarvisTab.entries.getOrNull(index)?.let { next ->
+                tab = next
+                showNavigation = false
+            }
+        },
+        // 第 5 项「浮窗」：直接唤起真正的悬浮球；没有悬浮窗权限时退到设置页并申请权限（P0-5）。
+        onOpenFloating = {
+            if (Settings.canDrawOverlays(context)) {
+                setFloatingEnabled(true)
+                FloatingAssistantService.show(context)
+            } else {
+                tab = JarvisTab.Settings
+                showNavigation = false
+                configNotice = "浮窗需要「显示在其他应用上层」权限；已为你申请，授权后再点一次浮窗。"
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                    )
+                }
+            }
+        }
+    )
+
+    // 归档默认隐藏，由「显示已归档」开关决定是否出现（工作区与对话同一开关）。
+    val visibleWorkspaces = if (showArchived) workspaces else workspaces.filterNot { it.archived }
+    val visibleConversations = ConversationStore.visibleSessions(conversations, showArchived)
+
+    Crossfade(targetState = activeModule.id, animationSpec = tween(JarvisMotion.Slow), label = "theme-transition") { activeThemeId ->
+        // 外壳只读 module.palette 与 module.mode；forMode 把两者换成运行期实际明暗，
+        // 于是状态栏图标与整套配色一起跟随系统，不需要改 ui/shell。
+        val module = remember(activeThemeId, effectiveMode) {
+            (JarvisThemeRegistry.all.firstOrNull { it.id == activeThemeId } ?: activeModule).forMode(effectiveMode)
+        }
+        CompositionLocalProvider(LocalJarvisTheme provides config.theme) {
+            JarvisShell(
+                module = module,
+                shell = shellContext,
+                chat = ChatUiContext(
+                    state = ChatUiContext.ChatState(
+                        contentPadding = PaddingValues(0.dp),
                         conversationId = activeConversation.id,
                         messages = messages,
                         draft = draft,
-                        onDraftChange = { draft = it },
                         sending = sending,
-                        onSend = ::sendPrompt,
-                        onVoiceInput = ::startSpeechInput,
                         speechNotice = speechNotice,
+                        editingLatest = editingMessageId != null,
+                        canUndoLatest = messages.isNotEmpty() && !sending,
+                        canEditLatest = messages.any { it.role == ChatMessageRole.USER } && !sending,
+                        reasoningEffort = config.reasoningEffort,
+                        reasoningEfforts = reasoningEfforts,
+                        toolboxVisible = showRuntimeTools
+                    ),
+                    callbacks = ChatUiContext.ChatCallbacks(
+                        onDraftChange = { draft = it },
+                        onSend = { prompt -> sendPrompt(prompt.trim()) },
+                        onVoiceInput = ::startSpeechInput,
                         onNewConversation = ::createConversation,
                         onBranch = ::createBranch,
                         onUndoLatest = ::undoLatestTurn,
                         onEditLatest = ::editLatestUserMessage,
                         onCancelEdit = ::cancelEdit,
-                        editingLatest = editingMessageId != null,
-                        canUndoLatest = messages.isNotEmpty() && !sending,
-                        canEditLatest = messages.any { it.role == ChatMessageRole.USER } && !sending,
+                        onReasoningEffortChange = { effort ->
+                            val normalized = normalizeReasoningEffort(effort)
+                            update(config.copy(reasoningEffort = normalized, deepThinkingEnabled = normalized != "off"))
+                        },
+                        onOpenTools = { showRuntimeTools = true },
+                        onCloseTools = { showRuntimeTools = false }
+                    ),
+                    shell = shellContext
+                ),
+                tasks = TasksUiContext(
+                    state = TasksUiContext.TasksState(
+                        contentPadding = PaddingValues(0.dp),
+                        rules = taskRules.map(::ruleView),
+                        recentEvents = taskEvents.map { event ->
+                            RecentEventView(
+                                id = event.optString("id"),
+                                title = event.optString("title"),
+                                message = event.optString("message"),
+                                ok = event.optBoolean("ok"),
+                                occurredAt = event.optLong("at")
+                            )
+                        },
+                        notificationAccess = taskNotificationAccess,
+                        accessibilityGranted = taskAccessibility,
+                        runtimeReady = bootstrapReport.state == RuntimeState.READY || bootstrapReport.state == RuntimeState.RUNNING,
+                        notice = taskNotice,
+                        editingRuleId = taskEditingRuleId,
+                        artistDraft = taskArtistDraft,
+                        replyDraft = taskReplyDraft,
+                        creatingRule = ruleCreating,
+                        ruleDraftTitle = ruleDraftTitle,
+                        ruleDraftKindKey = ruleDraftKindKey,
+                        ruleDraftKindOptions = ruleKindOptions,
+                        ruleDraftPrompt = ruleDraftPrompt,
+                        ruleDraftArtist = ruleDraftArtist,
+                        ruleDraftError = ruleDraftError
+                    ),
+                    callbacks = TasksUiContext.TasksCallbacks(
+                        onToggleRule = { id, enabled ->
+                            runCatching { automationManager.setEnabled(id, enabled) }
+                                .onSuccess { taskNotice = if (enabled) "已启用规则" else "已暂停规则" }
+                                .onFailure { taskNotice = "无法启用：${it.message ?: "请先完成权限和配置"}" }
+                            refreshTasks()
+                        },
+                        onDeleteRule = { id ->
+                            runCatching { automationManager.delete(id) }
+                            taskNotice = "已删除自动化规则"
+                            refreshTasks()
+                        },
+                        onConfigureRule = { id ->
+                            automationManager.findRule(id)?.let { rule ->
+                                taskEditingRuleId = rule.id
+                                taskArtistDraft = rule.artist
+                                taskReplyDraft = rule.replyInstruction
+                            }
+                        },
+                        onSaveRuleConfig = { id, artist, reply ->
+                            automationManager.findRule(id)?.let { rule ->
+                                runCatching { automationManager.update(rule.copy(artist = artist.trim(), replyInstruction = reply.trim())) }
+                                    .onSuccess { taskNotice = "配置已保存；规则仍保持暂停，请检查后启用" }
+                                    .onFailure { taskNotice = "保存失败：${it.message}" }
+                            }
+                            taskEditingRuleId = null
+                            refreshTasks()
+                        },
+                        onCancelRuleConfig = { taskEditingRuleId = null },
+                        onRequestNotificationAccess = {
+                            context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        },
+                        onRequestAccessibility = {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        },
+                        onRefresh = ::refreshTasks,
+                        onCreateRuleStart = {
+                            ruleCreating = true
+                            ruleDraftError = ""
+                            taskNotice = ""
+                        },
+                        onCreateRuleTitleChange = { ruleDraftTitle = it },
+                        onCreateRuleKindChange = { ruleDraftKindKey = it },
+                        onCreateRulePromptChange = { ruleDraftPrompt = it },
+                        onCreateRuleArtistChange = { ruleDraftArtist = it },
+                        onCreateRuleSubmit = { submitRuleDraft() },
+                        onCreateRuleCancel = { resetRuleDraftForm() }
+                    ),
+                    shell = shellContext
+                ),
+                workspace = WorkspaceUiContext(
+                    state = WorkspaceUiContext.WorkspaceState(
+                        contentPadding = PaddingValues(0.dp),
+                        // 归档的工作区/对话默认不进列表，只有打开「显示已归档」才出现。
+                        workspaces = visibleWorkspaces,
+                        conversations = visibleConversations,
+                        selectedWorkspace = workspaceName,
+                        globalPersona = config.mentorPrompt,
+                        globalWorldBook = config.worldBook,
+                        conversationCountByWorkspace = visibleConversations.groupingBy { it.workspace }.eachCount(),
+                        personaSources = conversations.map { session ->
+                            val profile = workspaces.firstOrNull { it.name == session.workspace }
+                            PersonaSourceView(
+                                sessionId = session.id,
+                                workspace = session.workspace,
+                                title = session.title,
+                                mentorPrompt = profile?.resolvedMentorPrompt(config.mentorPrompt) ?: config.mentorPrompt,
+                                worldBook = profile?.resolvedWorldBook(config.worldBook) ?: config.worldBook
+                            )
+                        },
+                        files = workspaceFiles,
+                        filesLoading = workspaceFilesLoading,
+                        filesNotice = workspaceFilesNotice,
+                        dirReady = workspaceDirReady,
+                        showArchived = showArchived,
+                        archivedWorkspaces = workspaces.filter { it.archived },
+                        archivedConversationIds = ConversationStore.archivedIds(conversations)
+                    ),
+                    callbacks = WorkspaceUiContext.WorkspaceCallbacks(
+                        onSelect = ::selectWorkspace,
+                        onSave = { profile, previous -> saveWorkspace(profile, previous) },
+                        onDelete = { name ->
+                            val remaining = workspaces.filterNot { it.name == name }
+                            // 默认工作区必须存在（WorkspaceStore.save 有 require）；删它就等于清空，故忽略。
+                            if (name != WorkspaceProfile.DEFAULT_NAME) {
+                                workspaces = remaining
+                                workspaceStore.save(workspaces)
+                                if (workspaceName == name) selectWorkspace(WorkspaceProfile.DEFAULT_NAME)
+                            } else {
+                                workspaceFilesNotice = "默认工作区不能删除"
+                            }
+                        },
+                        onArchive = { name -> setWorkspaceArchived(name, true) },
+                        onUnarchive = { name -> setWorkspaceArchived(name, false) },
+                        onPickDirectory = ::pickWorkspaceDirectory,
+                        onClearDirectory = ::clearWorkspaceDirectory,
+                        onToggleShowArchived = { showArchived = it },
+                        onMoveConversation = { id, target -> moveConversation(id, target) },
+                        onDeleteConversation = ::deleteConversation,
+                        onArchiveConversation = { id -> setConversationArchived(id, true) },
+                        onUnarchiveConversation = { id -> setConversationArchived(id, false) },
+                        onRenameConversation = { id, title -> renameConversation(id, title) }
+                    ),
+                    shell = shellContext
+                ),
+                settings = SettingsUiContext(
+                    state = SettingsUiContext.SettingsState(
+                        contentPadding = PaddingValues(0.dp),
+                        restrictionMode = config.restrictionMode,
+                        commandChannelEnabled = config.commandChannelEnabled,
+                        commandPrefix = config.commandPrefix,
+                        modelBaseUrl = config.modelBaseUrl,
+                        modelName = config.modelName,
+                        modelApiKey = config.modelApiKey,
+                        modelChain = config.modelChain,
+                        deepThinkingEnabled = config.deepThinkingEnabled,
                         reasoningEffort = config.reasoningEffort,
-                        onReasoningEffortChange = { effort -> val normalized = normalizeReasoningEffort(effort); update(config.copy(reasoningEffort = normalized, deepThinkingEnabled = normalized != "off")) }
-                    )
-                    JarvisTab.Tasks -> TasksScreen(padding)
-                    JarvisTab.Workspace -> WorkspaceScreen(padding, workspaces, conversations, workspaceName, config.mentorPrompt, config.worldBook, ::selectWorkspace, ::saveWorkspace)
-                    JarvisTab.Settings -> SettingsScreen(
-                        padding = padding,
-                        config = config,
+                        deepThinkingModel = config.deepThinkingModel,
+                        visionBaseUrl = config.visionBaseUrl,
+                        visionApiKey = config.visionApiKey,
+                        visionModel = config.visionModel,
+                        mentorPrompt = config.mentorPrompt,
+                        worldBook = config.worldBook,
+                        theme = config.theme,
+                        themeId = themeId,
+                        modeOverride = modeOverride,
+                        effectiveMode = effectiveMode,
+                        rootModes = RootMode.entries.map { RootModeOption(key = it.name, label = it.label) },
+                        rootModeKey = config.rootMode.name,
                         bootstrapReport = bootstrapReport,
-                        onRefreshRuntime = { bootstrapReport = bootstrap.bootstrap() },
                         runtimeMessage = runtimeMessage,
+                        configNotice = configNotice,
+                        themeOptions = JarvisThemeRegistry.all.map { item ->
+                            ThemeOptionView(
+                                id = item.id,
+                                label = item.label,
+                                story = item.story,
+                                description = item.description,
+                                modeKey = if (item.mode == ThemeMode.LIGHT) "light" else "dark"
+                            )
+                        },
+                        reasoningEfforts = reasoningEfforts,
+                        versionName = BuildConfig.VERSION_NAME,
+                        avatarSizeDp = floatingPreferences.sizeDp,
+                        avatarHideSeconds = floatingPreferences.hideSeconds,
+                        floatingAssistant = FloatingAssistantView(
+                            enabled = floatingEnabled,
+                            sizeDp = floatingPreferences.sizeDp,
+                            shape = floatingPreferences.shape.name.lowercase(),
+                            opacity = 1f,
+                            hideSeconds = floatingPreferences.hideSeconds
+                        ),
+                        floatingEnabled = floatingEnabled,
+                        floatingSizeDp = floatingPreferences.sizeDp,
+                        floatingShapeKey = floatingPreferences.shape.name.lowercase(),
+                        floatingShapes = FloatingShape.entries.map { ChoiceOption(it.name.lowercase(), it.label) },
+                        overlayGranted = Settings.canDrawOverlays(context),
+                        accessibilityGranted = AccessibilityController.service != null,
+                        doubleGestureKey = floatingPreferences.doubleTap.name.lowercase(),
+                        tripleGestureKey = floatingPreferences.tripleTap.name.lowercase(),
+                        doubleTask = floatingPreferences.doubleTapTask,
+                        tripleTask = floatingPreferences.tripleTapTask,
+                        gestureOptions = FloatingGestureAction.entries.map { ChoiceOption(it.name.lowercase(), it.label) },
+                        savedAutomations = taskRules.map(::ruleView),
+                        runtimeTools = toolStatuses.map { status ->
+                            RuntimeToolView(
+                                name = status.label,
+                                installed = status.source != ToolSource.MISSING,
+                                version = status.source.label
+                            )
+                        },
+                        tools = toolStatuses.map { status ->
+                            ToolStatusView(
+                                id = status.id,
+                                label = status.label,
+                                description = status.description,
+                                sourceLabel = status.source.label,
+                                path = status.path,
+                                installPackage = status.installPackage
+                            )
+                        },
+                        checkingTools = checkingTools,
+                        cmakeReady = toolStatuses.any { it.id == "cmake" && it.source != ToolSource.MISSING },
+                        ffmpegReady = toolStatuses.any { it.id == "ffmpeg" && it.source != ToolSource.MISSING },
+                        toolNotice = toolNotice,
+                        serverRunning = remoteServerEnabled,
+                        pairingCode = remotePairing?.code.orEmpty(),
+                        pairingExpiresAt = remotePairing?.expiresAt ?: 0L,
+                        remoteDeviceControl = remoteDeviceControl,
+                        remoteUrls = remoteUrls,
+                        plugins = pluginList.map { plugin ->
+                            PluginView(
+                                id = plugin.id,
+                                name = plugin.name,
+                                version = plugin.version,
+                                description = plugin.description,
+                                tools = plugin.tools,
+                                enabled = plugin.enabled,
+                                source = plugin.source
+                            )
+                        },
+                        pluginNotice = pluginNotice,
+                        pluginBusy = pluginBusy,
+                        memoryEntries = memoryEntries,
+                        memoryStatus = memoryStatusText,
+                        accessibilityAutoConnect = accessibilityAutoConnect,
+                        accessibilityStatus = when {
+                            AccessibilityController.service != null -> "无障碍已连接，可以操作当前屏幕"
+                            accessibilityStartup.isEnabled() -> "系统已启用无障碍，等待服务连接"
+                            else -> "无障碍未启用"
+                        },
+                        importNotice = configNotice,
+                        exportNotice = configNotice,
+                        saving = applying,
+                        applyNotice = applyNotice,
+                        applyFailed = applyFailed
+                    ),
+                    callbacks = SettingsUiContext.SettingsCallbacks(
+                        onRefreshRuntime = {
+                            runtimeScope.launch { bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() } }
+                        },
                         onRecovery = { showRecovery = true },
                         onStartRuntime = {
                             runtimeScope.launch {
-                                runtimeMessage = processManager.start().message
-                                bootstrapReport = bootstrap.bootstrap()
+                                runtimeMessage = withContext(Dispatchers.IO) { processManager.start().message }
+                                bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() }
                             }
                         },
                         onStopRuntime = {
                             runtimeScope.launch {
-                                processManager.stop()
+                                withContext(Dispatchers.IO) { processManager.stop() }
                                 runtimeMessage = "OpenClaw Gateway 已停止"
-                                bootstrapReport = bootstrap.bootstrap()
+                                bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() }
                             }
                         },
                         onRestrictionChange = { update(config.copy(restrictionMode = it)) },
@@ -840,7 +1681,11 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
                         onModelApiKeyChange = { update(config.copy(modelApiKey = it)) },
                         onModelChainChange = { update(config.copy(modelChain = it)) },
                         onDeepThinkingChange = { enabled ->
-                            val effort = if (enabled && config.reasoningEffort == "off") "medium" else if (!enabled) "off" else config.reasoningEffort
+                            val effort = when {
+                                enabled && config.reasoningEffort == "off" -> "medium"
+                                !enabled -> "off"
+                                else -> config.reasoningEffort
+                            }
                             update(config.copy(deepThinkingEnabled = enabled, reasoningEffort = effort))
                         },
                         onReasoningEffortChange = { effort ->
@@ -853,60 +1698,201 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
                         onVisionModelChange = { update(config.copy(visionModel = it)) },
                         onMentorPromptChange = { update(config.copy(mentorPrompt = it)) },
                         onWorldBookChange = { update(config.copy(worldBook = it)) },
-                        onThemeChange = { update(config.copy(theme = it)) },
-                        configNotice = configNotice,
-                        onImportAiClassroom = { importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                        onThemeChange = ::switchTheme,
+                        onModeOverrideChange = ::switchModeOverride,
+                        onImportAiClassroom = {
+                            importConfigLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
                         onExportAiClassroom = { exportConfigLauncher.launch("jarvis-ai-classroom-config.json") },
-                        onRootModeRequest = {
-                            pendingRootMode = it
-                            if (it == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = it))
+                        onRootModeRequest = { option ->
+                            val mode = RootMode.entries.firstOrNull { it.name == option.key }
+                            if (mode != null) {
+                                pendingRootMode = mode
+                                if (mode == RootMode.Full) showRootWarning = true else update(config.copy(rootMode = mode))
+                            }
+                        },
+                        onAvatarSizeChange = { saveFloatingPreferences(floatingPreferences.copy(sizeDp = it)) },
+                        onAvatarHideSecondsChange = { saveFloatingPreferences(floatingPreferences.copy(hideSeconds = it)) },
+                        onFloatingEnabledChange = ::setFloatingEnabled,
+                        onFloatingSizeChange = { saveFloatingPreferences(floatingPreferences.copy(sizeDp = it)) },
+                        onFloatingShapeChange = { key ->
+                            FloatingShape.entries.firstOrNull { it.name.equals(key, ignoreCase = true) }
+                                ?.let { saveFloatingPreferences(floatingPreferences.copy(shape = it)) }
+                        },
+                        onOverlayPermissionRequest = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                            )
+                        },
+                        onAccessibilitySettingsOpen = {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        },
+                        onDoubleGestureChange = { key ->
+                            FloatingGestureAction.entries.firstOrNull { it.name.equals(key, ignoreCase = true) }
+                                ?.let { saveFloatingPreferences(floatingPreferences.copy(doubleTap = it)) }
+                        },
+                        onTripleGestureChange = { key ->
+                            FloatingGestureAction.entries.firstOrNull { it.name.equals(key, ignoreCase = true) }
+                                ?.let { saveFloatingPreferences(floatingPreferences.copy(tripleTap = it)) }
+                        },
+                        onDoubleTaskChange = { saveFloatingPreferences(floatingPreferences.copy(doubleTapTask = it)) },
+                        onTripleTaskChange = { saveFloatingPreferences(floatingPreferences.copy(tripleTapTask = it)) },
+                        onSelectAutomationForGesture = { gestureKey, ruleId ->
+                            val rule = taskRules.firstOrNull { it.id == ruleId }
+                            if (rule != null) {
+                                val isDouble = floatingPreferences.doubleTap.name.equals(gestureKey, ignoreCase = true)
+                                saveFloatingPreferences(
+                                    if (isDouble) floatingPreferences.copy(doubleTap = FloatingGestureAction.Task, doubleTapTask = rule.sourcePrompt)
+                                    else floatingPreferences.copy(tripleTap = FloatingGestureAction.Task, tripleTapTask = rule.sourcePrompt)
+                                )
+                            }
+                        },
+                        onRefreshTools = ::refreshTools,
+                        onCheckTools = ::refreshTools,
+                        onInstallTool = { key ->
+                            toolStatuses.firstOrNull { it.id == key || it.label == key }?.let { status ->
+                                runtimeScope.launch {
+                                    val result = withContext(Dispatchers.IO) { runtimeToolManager.install(status) }
+                                    toolNotice = result.message
+                                    if (result.success) refreshTools()
+                                }
+                            }
+                        },
+                        onAccessibilityAutoConnectChange = { enabled ->
+                            accessibilityAutoConnect = enabled
+                            accessibilityStartup.autoConnect = enabled
+                            if (enabled) {
+                                runtimeScope.launch {
+                                    val message = withContext(Dispatchers.IO) { accessibilityStartup.connectWithRoot() }
+                                    runtimeMessage = message
+                                }
+                            }
+                        },
+                        onApply = { applySettings(verify = false) },
+                        onApplyAndVerify = { applySettings(verify = true) },
+                        onThemeChangeById = ::switchThemeById,
+                        onStartServer = {
+                            remoteAccess.enabled = true
+                            remoteServerEnabled = true
+                            remoteDeviceControl = remoteAccess.remoteDeviceControl
+                            syncRemoteServer()
+                        },
+                        onStopServer = {
+                            remoteAccess.enabled = false
+                            remoteAccess.revoke()
+                            remoteServerEnabled = false
+                            remotePairing = null
+                            syncRemoteServer()
+                        },
+                        onNewPairingCode = { remotePairing = remoteAccess.newPairingCode() },
+                        onCopyPairingCode = {
+                            val code = remotePairing?.code
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            if (code != null && clipboard != null) {
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Jarvis 配对码", code))
+                            }
+                        },
+                        onRevokePairing = {
+                            remoteAccess.revoke()
+                            remotePairing = null
+                        },
+                        onRemoteDeviceControlChange = { allowed ->
+                            remoteAccess.remoteDeviceControl = allowed
+                            remoteDeviceControl = allowed
+                        },
+                        onRefreshRemoteUrls = { remoteUrls = remoteAccess.localUrls() },
+                        onRefreshPlugins = ::refreshPlugins,
+                        onInstallPlugin = ::installPlugin,
+                        onUninstallPlugin = ::uninstallPlugin,
+                        onTogglePlugin = ::togglePlugin,
+                        onRefreshMemory = ::refreshMemory,
+                        onDeleteMemoryEntry = { id ->
+                            val message = runCatching {
+                                operationMemory.execute(
+                                    JSONObject().put("action", "forget").put("id", id),
+                                    MemoryReadOnlyHost
+                                ).message
+                            }.getOrElse { "删除失败：${it.message ?: "操作记忆不可用"}" }
+                            refreshMemory()
+                            memoryStatusText = message
                         }
+                    ),
+                    shell = shellContext
+                ),
+                chrome = ShellChrome(
+                    title = activeConversation.title.ifBlank { workspaceName },
+                    subtitle = "Jarvis · " + if (config.rootMode == RootMode.Full) "完全模式" else "个人助理",
+                    restrictionMode = config.restrictionMode,
+                    onRestrictionChange = { update(config.copy(restrictionMode = !config.restrictionMode)) },
+                    drawerOpen = showNavigation,
+                    onDrawerOpenChange = { showNavigation = it },
+                    railVisible = showLandscapeRail,
+                    onRailVisibleChange = { showLandscapeRail = it }
+                ),
+                drawerContent = {
+                    SessionRail(
+                        tab = tab,
+                        workspace = workspaceName,
+                        workspaces = workspaces,
+                        conversations = conversations,
+                        activeConversationId = activeConversationId,
+                        avatarRes = module.artwork.avatar,
+                        story = module.story,
+                        onTab = { tab = it; showNavigation = false },
+                        onWorkspace = ::selectWorkspace,
+                        onSelectConversation = ::selectConversation,
+                        onNewConversation = ::createConversation,
+                        // 抽屉内直接操作会话：改名/移动/归档/删除复用工作区屏已有的同一套回调。
+                        onRenameConversation = { id, title -> renameConversation(id, title) },
+                        onMoveConversation = { id, target -> moveConversation(id, target) },
+                        onArchiveConversation = { id -> setConversationArchived(id, true) },
+                        onUnarchiveConversation = { id -> setConversationArchived(id, false) },
+                        onDeleteConversation = ::deleteConversation,
+                        modifier = Modifier.fillMaxHeight()
                     )
+                },
+                dialogs = {
+                    if (showRuntimeTools) {
+                        RuntimeToolsDialog(
+                            onDismiss = { showRuntimeTools = false },
+                            onVoiceInput = {
+                                showRuntimeTools = false
+                                startSpeechInput()
+                            }
+                        )
+                    }
+                    if (showRootWarning && pendingRootMode == RootMode.Full) {
+                        RootWarningDialog(
+                            onCancel = { showRootWarning = false; pendingRootMode = null },
+                            onConfirm = {
+                                update(config.copy(rootMode = RootMode.Full))
+                                showRootWarning = false
+                                pendingRootMode = null
+                            }
+                        )
+                    }
+                    if (showRecovery) {
+                        RuntimeRecoveryDialog(
+                            onDismiss = { showRecovery = false },
+                            onReinstall = {
+                                showRecovery = false
+                                runtimeMessage = "正在修复内置运行时并保留数据…"
+                                runtimeScope.launch {
+                                    val result = withContext(Dispatchers.IO) { recoveryManager.reinstallEmbeddedPreservingData() }
+                                    runtimeMessage = result.message
+                                    bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() }
+                                }
+                            },
+                            onTermux = {
+                                val result = recoveryManager.launchTermuxSetup()
+                                runtimeMessage = result.message
+                                showRecovery = false
+                            }
+                        )
                     }
                 }
-                }
-            }
+            )
         }
-    AnimatedVisibility(
-        visible = isLandscape.not() && showNavigation,
-        enter = fadeIn(tween(180)) + slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = tween(260)),
-        exit = fadeOut(tween(150)) + slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = tween(220))
-    ) {
-        NavigationDrawerOverlay(tab, workspaceName, workspaces, conversations, activeConversationId, onTab = { tab = it; showNavigation = false }, onWorkspace = ::selectWorkspace, onSelectConversation = ::selectConversation, onNewConversation = ::createConversation, onDismiss = { showNavigation = false })
-    }
-
-    if (showRootWarning && pendingRootMode == RootMode.Full) {
-        RootWarningDialog(
-            onCancel = { showRootWarning = false; pendingRootMode = null },
-            onConfirm = {
-                update(config.copy(rootMode = RootMode.Full))
-                showRootWarning = false
-                pendingRootMode = null
-            }
-        )
-    }
-
-    if (showRecovery) {
-        RuntimeRecoveryDialog(
-            onDismiss = { showRecovery = false },
-            onReinstall = {
-                showRecovery = false
-                runtimeMessage = "正在修复内置运行时并保留数据…"
-                runtimeScope.launch {
-                    val result = withContext(Dispatchers.IO) { recoveryManager.reinstallEmbeddedPreservingData() }
-                    runtimeMessage = result.message
-                    bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() }
-                }
-            },
-            onTermux = {
-                val result = recoveryManager.launchTermuxSetup()
-                runtimeMessage = result.message
-                showRecovery = false
-            }
-        )
-    }
-    }
-    }
     }
 }
 
@@ -982,108 +1968,6 @@ private suspend fun callJarvisModel(
     }
 }
 
-private suspend fun callVisionModel(config: JarvisConfig, prompt: String, dataUrl: String): String = withContext(Dispatchers.IO) {
-    val baseUrl = config.visionBaseUrl.ifBlank { config.modelBaseUrl }.trim()
-    val model = config.visionModel.ifBlank { config.modelName }.trim()
-    if (baseUrl.isBlank() || model.isBlank()) return@withContext "请先在设置中填写识图模型配置。"
-    val system = config.mentorPrompt.ifBlank { "你是 Jarvis 的视觉理解模块，请准确描述图片中与用户问题有关的内容。" }
-    val content = JSONArray()
-        .put(JSONObject().put("type", "text").put("text", prompt))
-        .put(JSONObject().put("type", "image_url").put("image_url", JSONObject().put("url", dataUrl)))
-    requestChatCompletion(
-        baseUrl = baseUrl,
-        apiKey = config.visionApiKey.ifBlank { config.modelApiKey },
-        model = model,
-        messages = JSONArray()
-            .put(JSONObject().put("role", "system").put("content", system))
-            .put(JSONObject().put("role", "user").put("content", content)),
-        reasoningEffort = "off"
-    )
-}
-
-@Composable
-private fun MainContent(
-    tab: JarvisTab,
-    padding: PaddingValues,
-    conversationId: String,
-    messages: List<ChatMessage>,
-    draft: String,
-    sending: Boolean,
-    onDraftChange: (String) -> Unit,
-    onSend: (String) -> Unit,
-    onVoiceInput: () -> Unit,
-    speechNotice: String,
-    onNewConversation: () -> Unit,
-    onBranch: (String?) -> Unit,
-    onUndoLatest: () -> Unit,
-    onEditLatest: () -> Unit,
-    onCancelEdit: () -> Unit,
-    editingLatest: Boolean,
-    canUndoLatest: Boolean,
-    canEditLatest: Boolean,
-    workspaces: List<WorkspaceProfile>,
-    conversations: List<ChatSession>,
-    selectedWorkspace: String,
-    onSelectWorkspace: (String) -> Unit,
-    onSaveWorkspace: (WorkspaceProfile, String?) -> Unit,
-    config: JarvisConfig,
-    bootstrapReport: BootstrapReport,
-    runtimeMessage: String,
-    onConfig: (JarvisConfig) -> Unit,
-    onRefreshRuntime: () -> Unit,
-    onRecovery: () -> Unit,
-    onStartRuntime: () -> Unit,
-    onStopRuntime: () -> Unit,
-    onRootModeRequest: (RootMode) -> Unit,
-    configNotice: String,
-    onImportAiClassroom: () -> Unit,
-    onExportAiClassroom: () -> Unit
-) {
-    when (tab) {
-        JarvisTab.Chat -> ChatScreen(
-            padding = padding,
-            conversationId = conversationId,
-            messages = messages,
-            draft = draft,
-            onDraftChange = onDraftChange,
-            sending = sending,
-            onSend = onSend,
-            onVoiceInput = onVoiceInput,
-            speechNotice = speechNotice,
-            onNewConversation = onNewConversation,
-            onBranch = onBranch,
-            onUndoLatest = onUndoLatest,
-            onEditLatest = onEditLatest,
-            onCancelEdit = onCancelEdit,
-            editingLatest = editingLatest,
-            canUndoLatest = canUndoLatest,
-            canEditLatest = canEditLatest,
-            reasoningEffort = config.reasoningEffort,
-            onReasoningEffortChange = { effort -> val normalized = normalizeReasoningEffort(effort); onConfig(config.copy(reasoningEffort = normalized, deepThinkingEnabled = normalized != "off")) }
-        )
-        JarvisTab.Tasks -> TasksScreen(padding)
-        JarvisTab.Workspace -> WorkspaceScreen(padding, workspaces, conversations, selectedWorkspace, config.mentorPrompt, config.worldBook, onSelectWorkspace, onSaveWorkspace)
-        JarvisTab.Settings -> SettingsScreen(
-            padding, config, bootstrapReport, onRefreshRuntime, runtimeMessage, onRecovery,
-            onStartRuntime, onStopRuntime,
-            { onConfig(config.copy(restrictionMode = it)) },
-            { onConfig(config.copy(commandChannelEnabled = it)) },
-            { onConfig(config.copy(commandPrefix = it)) },
-            { onConfig(config.copy(modelBaseUrl = it)) },
-            { onConfig(config.copy(modelName = it)) },
-            { onConfig(config.copy(modelApiKey = it)) },
-            { onConfig(config.copy(modelChain = it)) },
-            { enabled -> onConfig(config.copy(deepThinkingEnabled = enabled, reasoningEffort = if (enabled && config.reasoningEffort == "off") "medium" else if (!enabled) "off" else config.reasoningEffort)) },
-            { effort -> onConfig(config.copy(reasoningEffort = normalizeReasoningEffort(effort), deepThinkingEnabled = normalizeReasoningEffort(effort) != "off")) },
-            { onConfig(config.copy(deepThinkingModel = it)) }, { onConfig(config.copy(visionBaseUrl = it)) },
-            { onConfig(config.copy(visionApiKey = it)) }, { onConfig(config.copy(visionModel = it)) },
-            { onConfig(config.copy(mentorPrompt = it)) }, { onConfig(config.copy(worldBook = it)) },
-            { onConfig(config.copy(theme = it)) },
-            configNotice, onImportAiClassroom, onExportAiClassroom, onRootModeRequest
-        )
-    }
-}
-
 @Composable
 private fun SessionRail(
     tab: JarvisTab,
@@ -1091,22 +1975,40 @@ private fun SessionRail(
     workspaces: List<WorkspaceProfile>,
     conversations: List<ChatSession>,
     activeConversationId: String,
+    /** 当前主题模块的头像图源与故事名：抽屉头部不再读旧枚举 LocalJarvisTheme。 */
+    avatarRes: Int,
+    story: String,
     onTab: (JarvisTab) -> Unit,
     onWorkspace: (String) -> Unit,
     onSelectConversation: (String) -> Unit,
     onNewConversation: () -> Unit,
+    /** 会话行的二级菜单动作，全部复用工作区屏的同名操作（只改库，不复制逻辑）。 */
+    onRenameConversation: (String, String) -> Unit = { _, _ -> },
+    onMoveConversation: (String, String) -> Unit = { _, _ -> },
+    onArchiveConversation: (String) -> Unit = {},
+    onUnarchiveConversation: (String) -> Unit = {},
+    onDeleteConversation: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val compact = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     var workspaceMenu by remember { mutableStateOf(false) }
     val expandedWorkspaces = remember { mutableStateMapOf<String, Boolean>() }
+    // 抽屉内的会话操作状态：归档默认隐藏，需要时在「對話」标题行展开取回。
+    var railShowArchived by remember { mutableStateOf(false) }
+    var railNotice by remember { mutableStateOf("") }
+    var renameTarget by remember { mutableStateOf<ChatSession?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+    var renameError by remember { mutableStateOf("") }
+    var moveTarget by remember { mutableStateOf<ChatSession?>(null) }
+    var deleteTarget by remember { mutableStateOf<ChatSession?>(null) }
+    val sessionRows = if (railShowArchived) conversations else conversations.filterNot { it.isArchived }
     Column(modifier.background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(if (compact) 12.dp else 18.dp), horizontalAlignment = Alignment.Start) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = if (compact) 2.dp else 12.dp)) {
-            JarvisBrandMark(size = if (compact) 30 else 42)
+            JarvisBrandMark(avatarRes = avatarRes, size = if (compact) 30 else 42)
             Spacer(Modifier.width(10.dp))
             Column(horizontalAlignment = Alignment.Start) {
                 Text("Jarvis", style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (!compact) Text(LocalJarvisTheme.current.story, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!compact) Text(story, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Spacer(Modifier.height(if (compact) 4.dp else 20.dp))
@@ -1119,7 +2021,9 @@ private fun SessionRail(
             }
             DropdownMenu(expanded = workspaceMenu, onDismissRequest = { workspaceMenu = false }) {
                 workspaces.forEach { profile ->
-                    DropdownMenuItem(text = { Text(profile.name) }, onClick = { workspaceMenu = false; onWorkspace(profile.name) })
+                    key(profile.name) {
+                        DropdownMenuItem(text = { Text(profile.name) }, onClick = { workspaceMenu = false; onWorkspace(profile.name) })
+                    }
                 }
             }
         }
@@ -1127,6 +2031,7 @@ private fun SessionRail(
         if (!compact) Text("导航", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         Spacer(Modifier.height(if (compact) 2.dp else 8.dp))
         JarvisTab.entries.forEach { item ->
+            key(item) {
             Surface(color = if (tab == item) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
                 shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 3.dp)
                     .jarvisPressScale().clickable(role = androidx.compose.ui.semantics.Role.Tab, onClick = { onTab(item) })) {
@@ -1138,19 +2043,32 @@ private fun SessionRail(
                     Text(item.label, modifier = Modifier.weight(1f), fontWeight = if (tab == item) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
+            }
         }
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("對話", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            val archivedCount = conversations.count { it.isArchived }
+            if (archivedCount > 0) {
+                TextButton(onClick = { railShowArchived = !railShowArchived },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)) {
+                    Text(if (railShowArchived) "隐藏归档" else "归档 $archivedCount", fontSize = 11.sp)
+                }
+            }
             TextButton(onClick = onNewConversation, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), modifier = Modifier.jarvisPressScale()) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("新建", fontSize = 12.sp)
             }
         }
-        val groupNames = (workspaces.map { it.name } + conversations.map { it.workspace }).distinct()
+        if (railNotice.isNotBlank()) {
+            Text(railNotice, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp, bottom = 4.dp))
+        }
+        val groupNames = (workspaces.map { it.name } + sessionRows.map { it.workspace }).distinct()
         groupNames.forEach { groupName ->
-            val groupConversations = conversations.filter { it.workspace == groupName }.take(30)
+            key(groupName) {
+            val groupConversations = sessionRows.filter { it.workspace == groupName }.take(30)
             val expanded = expandedWorkspaces[groupName] ?: (groupName == workspace)
             Row(Modifier.fillMaxWidth().clickable { expandedWorkspaces[groupName] = !expanded }
                 .padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1161,243 +2079,176 @@ private fun SessionRail(
             }
             AnimatedVisibility(visible = expanded) {
                 Column {
+                    // key 让每行按会话 id 复用，改名/归档重排时不会整列重组。
                     groupConversations.forEach { conversation ->
-                        val selected = conversation.id == activeConversationId && tab == JarvisTab.Chat
-                        Surface(color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                            shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(start = 18.dp, bottom = 2.dp)
-                                .clickable { onSelectConversation(conversation.id) }) {
-                            Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                Text(conversation.title, maxLines = 1, fontSize = 13.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                                val preview = conversation.messages.lastOrNull()?.content.orEmpty()
-                                if (preview.isNotBlank()) Text(preview, maxLines = 1, fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
-                            }
+                        key(conversation.id) {
+                            SessionRailRow(
+                                conversation = conversation,
+                                selected = conversation.id == activeConversationId && tab == JarvisTab.Chat,
+                                otherWorkspaces = workspaces.filter { it.name != conversation.workspace },
+                                onSelect = { onSelectConversation(conversation.id) },
+                                onRename = { railNotice = ""; renameError = ""; renameDraft = conversation.title; renameTarget = conversation },
+                                onMove = { railNotice = ""; moveTarget = conversation },
+                                onToggleArchive = {
+                                    if (conversation.isArchived) {
+                                        onUnarchiveConversation(conversation.id)
+                                        railNotice = "已还原「${conversation.title}」，会话回到列表"
+                                    } else {
+                                        onArchiveConversation(conversation.id)
+                                        railNotice = "已归档「${conversation.title}」，数据保留"
+                                    }
+                                },
+                                onDelete = { railNotice = ""; deleteTarget = conversation }
+                            )
                         }
                     }
                 }
             }
+            }
         }
     }
+    val renaming = renameTarget
+    if (renaming != null) {
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名会话") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = renameDraft,
+                        onValueChange = { renameDraft = it.take(60); renameError = "" },
+                        singleLine = true,
+                        isError = renameError.isNotBlank(),
+                        label = { Text("会话名称") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (renameError.isNotBlank()) {
+                        Text(renameError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val clean = renameDraft.trim()
+                    if (clean.isEmpty()) renameError = "名称不能为空" else {
+                        onRenameConversation(renaming.id, clean)
+                        railNotice = "已重命名为「$clean」"
+                        renameTarget = null
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("取消") } }
+        )
+    }
+    val moving = moveTarget
+    if (moving != null) {
+        val targets = workspaces.filter { it.name != moving.workspace }
+        AlertDialog(
+            onDismissRequest = { moveTarget = null },
+            title = { Text("移动到其他工作区") },
+            text = {
+                Column {
+                    Text("当前工作区：${moving.workspace}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                    if (targets.isEmpty()) {
+                        Text("只有一个工作区，无法移动。先在工作区屏新建目标工作区。", fontSize = 13.sp)
+                    } else {
+                        targets.forEach { profile ->
+                            TextButton(onClick = {
+                                onMoveConversation(moving.id, profile.name)
+                                railNotice = "已移动到「${profile.name}」"
+                                moveTarget = null
+                            }, modifier = Modifier.fillMaxWidth()) {
+                                Text(profile.name, modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { moveTarget = null }) { Text("关闭") } }
+        )
+    }
+    val deleting = deleteTarget
+    if (deleting != null) {
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("删除会话") },
+            text = {
+                Text(
+                    if (conversations.size <= 1) "「${deleting.title}」是最后一条会话；删除后会自动补一条空白会话，不会出现空列表。"
+                    else "删除「${deleting.title}」后消息不可恢复，确认删除？"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteConversation(deleting.id)
+                    railNotice = "已删除「${deleting.title}」"
+                    deleteTarget = null
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } }
+        )
+    }
 }
 
+/**
+ * 抽屉里的一行会话：主体点击进入，右侧 44dp 的「⋯」打开二级菜单（改名 / 移动 / 归档或还原 / 删除）。
+ * 菜单状态留在行内，列表用 key 复用后不会因其他行变化而错位。
+ */
 @Composable
-private fun VerticalDivider() { Box(Modifier.width(1.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant)) }
-
-@Composable
-private fun NavigationDrawerOverlay(
-    tab: JarvisTab,
-    workspace: String,
-    workspaces: List<WorkspaceProfile>,
-    conversations: List<ChatSession>,
-    activeConversationId: String,
-    onTab: (JarvisTab) -> Unit,
-    onWorkspace: (String) -> Unit,
-    onSelectConversation: (String) -> Unit,
-    onNewConversation: () -> Unit,
-    onDismiss: () -> Unit
+private fun SessionRailRow(
+    conversation: ChatSession,
+    selected: Boolean,
+    otherWorkspaces: List<WorkspaceProfile>,
+    onSelect: () -> Unit,
+    onRename: () -> Unit,
+    onMove: () -> Unit,
+    onToggleArchive: () -> Unit,
+    onDelete: () -> Unit
 ) {
-    Row(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.25f))) {
-        SessionRail(tab, workspace, workspaces, conversations, activeConversationId, onTab, onWorkspace,
-            onSelectConversation, onNewConversation, Modifier.widthIn(max = 300.dp).fillMaxHeight())
-        Spacer(Modifier.weight(1f).fillMaxHeight().clickable(onClick = onDismiss))
-    }
-}
-
-private fun requestChatCompletion(
-    baseUrl: String,
-    apiKey: String,
-    model: String,
-    messages: JSONArray,
-    reasoningEffort: String
-): String {
-    val endpoint = baseUrl.trimEnd('/').let { if (it.endsWith("/chat/completions")) it else "$it/chat/completions" }
-    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-        requestMethod = "POST"
-        doInput = true
-        doOutput = true
-        connectTimeout = 20_000
-        readTimeout = 90_000
-        setRequestProperty("Content-Type", "application/json")
-        if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
-    }
-    val request = JSONObject()
-        .put("model", model)
-        .put("messages", messages)
-        .put("temperature", 0.35)
-        .put("stream", false)
-    if (reasoningEffort in reasoningEfforts && reasoningEffort != "off") {
-        request.put("reasoning_effort", reasoningEffort)
-    }
-    OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(request.toString()) }
-    val responseStream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
-    val response = BufferedReader(InputStreamReader(responseStream, Charsets.UTF_8)).use { it.readText() }
-    if (connection.responseCode !in 200..299) {
-        throw IllegalStateException("HTTP ${connection.responseCode}: ${response.take(220)}")
-    }
-    val content = JSONObject(response).optJSONArray("choices")
-        ?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
-    return when (content) {
-        is String -> content.trim()
-        is JSONArray -> buildString {
-            for (index in 0 until content.length()) {
-                val item = content.optJSONObject(index)
-                append(item?.optString("text", "") ?: content.optString(index))
-            }
-        }.trim()
-        else -> "模型返回了空内容。"
-    }
-}
-
-@Composable
-private fun ChatScreen(
-    padding: PaddingValues,
-    conversationId: String,
-    messages: List<ChatMessage>,
-    draft: String,
-    onDraftChange: (String) -> Unit,
-    sending: Boolean,
-    onSend: (String) -> Unit,
-    onVoiceInput: () -> Unit = {},
-    speechNotice: String = "",
-    onNewConversation: () -> Unit = {},
-    onBranch: (String?) -> Unit = {},
-    onUndoLatest: () -> Unit = {},
-    onEditLatest: () -> Unit = {},
-    onCancelEdit: () -> Unit = {},
-    editingLatest: Boolean = false,
-    canUndoLatest: Boolean = false,
-    canEditLatest: Boolean = false,
-    reasoningEffort: String = "off",
-    onReasoningEffortChange: (String) -> Unit = {}
-) {
-    val listState = rememberLazyListState()
-    var showConversationMenu by remember { mutableStateOf(false) }
-    var showQuickTools by remember { mutableStateOf(false) }
-    var showReasoningMenu by remember { mutableStateOf(false) }
-    val welcome = messages.isEmpty()
-    val compact = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    LaunchedEffect(conversationId, messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-    }
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.Start) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f)) {
-                Text("对话", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("在消息下方编辑、撤销或创建分支", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+    var menuOpen by remember { mutableStateOf(false) }
+    Surface(color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(start = 18.dp, bottom = 2.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).clickable(onClick = onSelect).padding(horizontal = 12.dp, vertical = 9.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(conversation.title.ifBlank { "未命名会话" }, maxLines = 1, fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    if (conversation.isArchived) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("已归档", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                val preview = conversation.messages.lastOrNull()?.content.orEmpty()
+                if (preview.isNotBlank()) Text(preview, maxLines = 1, fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
             }
             Box {
-                IconButton(onClick = { showConversationMenu = true }, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Add, contentDescription = "新建对话或分支") }
-                DropdownMenu(expanded = showConversationMenu, onDismissRequest = { showConversationMenu = false }) {
-                    DropdownMenuItem(text = { Text("新建对话") }, onClick = { showConversationMenu = false; onNewConversation() })
-                    DropdownMenuItem(text = { Text("从当前对话创建分支") }, onClick = { showConversationMenu = false; onBranch(null) })
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(44.dp)) {
+                    Text("⋯", fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("改名") }, onClick = { menuOpen = false; onRename() })
+                    DropdownMenuItem(
+                        text = {
+                            Text(if (otherWorkspaces.isEmpty()) "移动到其他工作区（仅一个工作区）" else "移动到其他工作区")
+                        },
+                        enabled = otherWorkspaces.isNotEmpty(),
+                        onClick = { menuOpen = false; onMove() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (conversation.isArchived) "还原" else "归档") },
+                        onClick = { menuOpen = false; onToggleArchive() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                        onClick = { menuOpen = false; onDelete() }
+                    )
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)) {
-            if (welcome) {
-                item {
-                    ThemeIllustration("让想法，\n开始行动。", "交给 Jarvis，逐步完成。", compact = compact)
-                    Spacer(Modifier.height(18.dp))
-                    Text("从一个小任务开始", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(
-                            Triple(Icons.Default.Tune, "手机状态", "查询本机手机型号、系统版本和当前设备状态。"),
-                            Triple(Icons.Default.Home, "打开应用", "帮我打开一个应用，请先问我要打开哪个。"),
-                            Triple(Icons.Default.Build, "操作记忆", "查看已保存的操作路径，告诉我有哪些可以复用。")
-                        ).forEach { (icon, title, prompt) ->
-                            OutlinedButton(onClick = { onDraftChange(prompt) }, modifier = Modifier.jarvisPressScale()) {
-                                Icon(icon, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text(title)
-                            }
-                        }
-                    }
-                }
-            }
-            items(if (welcome) emptyList() else messages, key = { it.id }) { message ->
-                AnimatedVisibility(visible = true, enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.96f, animationSpec = tween(220))) {
-                    val isUser = message.role == ChatMessageRole.USER
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
-                        Text(if (isUser) "你" else "Jarvis", modifier = Modifier.padding(start = 2.dp, bottom = 6.dp),
-                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Surface(color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.widthIn(max = 760.dp)) {
-                            Text(message.content, modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp), color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyLarge)
-                        }
-                        Row(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            TextButton(onClick = { onBranch(message.id) }, enabled = !sending,
-                                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp), modifier = Modifier.jarvisPressScale()) {
-                                Icon(Icons.Default.Add, null, modifier = Modifier.size(15.dp)); Text("分支", fontSize = 11.sp)
-                            }
-                            if (message.id == messages.lastOrNull { it.role == ChatMessageRole.USER }?.id && isUser) {
-                                TextButton(onClick = if (editingLatest) onCancelEdit else onEditLatest,
-                                    enabled = !sending && (editingLatest || canEditLatest),
-                                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp), modifier = Modifier.jarvisPressScale()) {
-                                    Icon(if (editingLatest) Icons.Default.Close else Icons.Default.Edit, null, modifier = Modifier.size(15.dp))
-                                    Text(if (editingLatest) "取消编辑" else "编辑", fontSize = 11.sp)
-                                }
-                            }
-                            if (message.id == messages.lastOrNull()?.id) {
-                                TextButton(onClick = onUndoLatest, enabled = canUndoLatest,
-                                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp), modifier = Modifier.jarvisPressScale()) {
-                                    Icon(Icons.Default.Undo, null, modifier = Modifier.size(15.dp)); Text("撤销", fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (editingLatest) {
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("正在修改上一条；发送后才会替换原对话轮次。", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-            }
-        }
-        Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = onDraftChange,
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(if (editingLatest) "修改上一条消息后重新发送…" else "给 Jarvis 发消息，或描述一个任务…") },
-                maxLines = 4
-            )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                TextButton(onClick = { showReasoningMenu = true }, contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.jarvisPressScale()) {
-                    Icon(Icons.Default.Tune, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
-                    Text("思考 ${normalizeReasoningEffort(reasoningEffort)}", fontSize = 12.sp)
-                }
-                DropdownMenu(expanded = showReasoningMenu, onDismissRequest = { showReasoningMenu = false }) {
-                    reasoningEfforts.forEach { effort -> DropdownMenuItem(text = { Text(effort) }, onClick = {
-                        showReasoningMenu = false; onReasoningEffortChange(effort)
-                    }) }
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onVoiceInput, enabled = !sending, modifier = Modifier.padding(start = 2.dp).size(44.dp).jarvisPressScale()) {
-                Icon(Icons.Default.Mic, contentDescription = "语音转文字", tint = MaterialTheme.colorScheme.primary)
-            }
-            IconButton(onClick = { showQuickTools = true }, modifier = Modifier.size(44.dp).jarvisPressScale()) {
-                Icon(Icons.Default.Build, contentDescription = "打开工具箱", tint = MaterialTheme.colorScheme.primary)
-            }
-            IconButton(onClick = { onSend(draft.trim()) }, enabled = !sending && draft.isNotBlank(), modifier = Modifier.padding(start = 6.dp).size(52.dp).jarvisPressScale()) {
-                Icon(Icons.Default.Send, contentDescription = "发送", tint = MaterialTheme.colorScheme.primary)
-            }
-            }
-        }
-        }
-        if (speechNotice.isNotBlank()) Text(speechNotice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(bottom = 4.dp))
-        if (sending) Text("正在请求模型…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
     }
-    if (showQuickTools) RuntimeToolsDialog(onDismiss = { showQuickTools = false }, onVoiceInput = {
-        showQuickTools = false
-        onVoiceInput()
-    })
 }
 
 @Composable
@@ -1462,695 +2313,6 @@ private fun RuntimeToolsDialog(onDismiss: () -> Unit, onVoiceInput: () -> Unit) 
     )
 }
 
-@Composable
-private fun TasksScreen(padding: PaddingValues) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val manager = remember(context) { com.jarvis.app.runtime.AutomationManager(context) }
-    var rules by remember { mutableStateOf(manager.list()) }
-    var events by remember { mutableStateOf(manager.recentEvents()) }
-    var notice by remember { mutableStateOf("") }
-    var editing by remember { mutableStateOf<AutomationRule?>(null) }
-    var artistDraft by remember { mutableStateOf("") }
-    var replyDraft by remember { mutableStateOf("") }
-    var notificationAccess by remember { mutableStateOf(manager.hasNotificationAccess()) }
-    var accessibilityReady by remember { mutableStateOf(AccessibilityController.service != null) }
-
-    fun refresh() {
-        rules = manager.list()
-        events = manager.recentEvents()
-        notificationAccess = manager.hasNotificationAccess()
-        accessibilityReady = AccessibilityController.service != null
-    }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            refresh()
-            kotlinx.coroutines.delay(1200)
-        }
-    }
-
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.Start) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("自动化", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("通过对话创建，收到通知后按规则执行一次。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = { refresh() }, modifier = Modifier.jarvisPressScale()) { Icon(Icons.Default.Tune, contentDescription = "刷新自动化") }
-        }
-        Spacer(Modifier.height(10.dp))
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-                Text("运行前检查", fontWeight = FontWeight.SemiBold)
-                Text("通知访问：${if (notificationAccess) "已授权" else "未授权"} · 无障碍：${if (accessibilityReady) "已连接" else "未连接"}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("规则默认暂停；启用后只匹配目标应用通知，并在完成后核实结果。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    if (!notificationAccess) OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, modifier = Modifier.jarvisPressScale()) { Text("授权通知") }
-                    if (!accessibilityReady) OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, modifier = Modifier.jarvisPressScale()) { Text("开启无障碍") }
-                }
-            }
-        }
-        if (notice.isNotBlank()) {
-            Text(notice, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
-        }
-        Spacer(Modifier.height(6.dp))
-        if (rules.isEmpty()) {
-            EmptyState(Icons.Default.CheckCircle, "还没有自动化", "在对话中输入“当哔哩哔哩上有人回复我就立刻回复”或“当 Pixiv 画师发布新作品就立刻下载”。")
-        } else {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                rules.forEach { rule ->
-                    AutomationRuleCard(rule, onEdit = {
-                        editing = rule
-                        artistDraft = rule.artist
-                        replyDraft = rule.replyInstruction
-                    }, readiness = if (rule.enabled) null else manager.readiness(rule), onToggle = { enabled ->
-                        runCatching { manager.setEnabled(rule.id, enabled) }
-                            .onSuccess { notice = if (enabled) "已启用“${rule.title}”" else "已暂停“${rule.title}”"; refresh() }
-                            .onFailure { notice = "无法启用：${it.message ?: "请先完成权限和配置"}" }
-                    }, onDelete = {
-                        manager.delete(rule.id)
-                        notice = "已删除自动化规则"
-                        refresh()
-                    })
-                }
-                if (events.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text("最近执行", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    events.take(8).forEach { event ->
-                        val ok = event.optBoolean("ok")
-                        Text("${if (ok) "✓" else "!"} ${event.optString("title")} · ${event.optString("message")}", fontSize = 12.sp, color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
-                    }
-                }
-                Spacer(Modifier.height(18.dp))
-            }
-        }
-    }
-
-    editing?.let { rule ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text("配置自动化") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(rule.title, fontWeight = FontWeight.SemiBold)
-                    Text("原始要求：${rule.sourcePrompt}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (rule.kind == AutomationKind.PIXIV_NEW_WORK) {
-                        OutlinedTextField(value = artistDraft, onValueChange = { artistDraft = it }, singleLine = true, label = { Text("Pixiv 画师名称或用户 ID") })
-                    }
-                    if (rule.kind == AutomationKind.BILIBILI_REPLY) {
-                        OutlinedTextField(value = replyDraft, onValueChange = { replyDraft = it }, minLines = 2, label = { Text("回复风格要求") })
-                    }
-                    Text("启用前还需要目标应用通知访问和 Jarvis 无障碍服务。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    runCatching { manager.update(rule.copy(artist = artistDraft.trim(), replyInstruction = replyDraft.trim())) }
-                        .onSuccess { notice = "配置已保存；规则仍保持暂停，请检查后启用"; editing = null; refresh() }
-                        .onFailure { notice = "保存失败：${it.message}" }
-                }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } }
-        )
-    }
-}
-
-@Composable
-private fun AutomationRuleCard(
-    rule: AutomationRule,
-    onEdit: () -> Unit,
-    readiness: String?,
-    onToggle: (Boolean) -> Unit,
-    onDelete: () -> Unit
-) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(15.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(rule.title, fontWeight = FontWeight.SemiBold)
-                    Text(rule.kind.label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(checked = rule.enabled, onCheckedChange = onToggle, modifier = Modifier.jarvisPressScale())
-            }
-            Text(if (rule.enabled) "已启用 · 等待目标应用通知" else "已暂停 · 不会自动操作", fontSize = 13.sp, color = if (rule.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            if (rule.kind == AutomationKind.PIXIV_NEW_WORK) Text("画师：${rule.artist.ifBlank { "未配置" }}", fontSize = 12.sp)
-            if (!rule.enabled && readiness != null) Text("启用前：$readiness", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-            if (rule.lastResult.isNotBlank()) Text("最近结果：${rule.lastResult}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 6.dp)) {
-                TextButton(onClick = onEdit, modifier = Modifier.jarvisPressScale()) { Text("配置") }
-                TextButton(onClick = onDelete, modifier = Modifier.jarvisPressScale()) { Text("删除") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WorkspaceScreen(
-    padding: PaddingValues,
-    workspaces: List<WorkspaceProfile>,
-    conversations: List<ChatSession>,
-    selectedWorkspace: String,
-    globalPersona: String,
-    globalWorldBook: String,
-    onSelect: (String) -> Unit,
-    onSave: (WorkspaceProfile, String?) -> Unit
-) {
-    var editing by remember { mutableStateOf<WorkspaceProfile?>(null) }
-    var creating by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(18.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("工作区", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            Button(onClick = { creating = true }, modifier = Modifier.jarvisPressScale()) {
-                Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("新建工作区")
-            }
-        }
-        Text("为每个工作区选择共同设定，或单独编辑人格与世界书。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(18.dp))
-        workspaces.forEach { profile ->
-            WorkspaceRow(profile, conversations.count { it.workspace == profile.name }, profile.name == selectedWorkspace,
-                onSelect = { onSelect(profile.name) }, onEdit = { editing = profile })
-        }
-    }
-    if (creating || editing != null) WorkspaceEditorDialog(
-        original = editing,
-        workspaces = workspaces,
-        conversations = conversations,
-        globalPersona = globalPersona,
-        globalWorldBook = globalWorldBook,
-        onDismiss = { creating = false; editing = null },
-        onSave = { profile, previous -> onSave(profile, previous); creating = false; editing = null }
-    )
-}
-
-@Composable
-private fun WorkspaceRow(
-    profile: WorkspaceProfile,
-    count: Int,
-    selected: Boolean,
-    onSelect: () -> Unit,
-    onEdit: () -> Unit
-) {
-    Surface(color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).animateContentSize()) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Home, null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(profile.name, fontWeight = FontWeight.SemiBold)
-                Text(if (profile.useGlobalPersona) "共同人格与世界书 · $count 个会话" else "自定义人格与世界书 · $count 个会话",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-            }
-            TextButton(onClick = onSelect, modifier = Modifier.jarvisPressScale()) { Text("进入") }
-            TextButton(onClick = onEdit, modifier = Modifier.jarvisPressScale()) { Text("编辑") }
-        }
-    }
-}
-
-@Composable
-private fun WorkspaceEditorDialog(
-    original: WorkspaceProfile?,
-    workspaces: List<WorkspaceProfile>,
-    conversations: List<ChatSession>,
-    globalPersona: String,
-    globalWorldBook: String,
-    onDismiss: () -> Unit,
-    onSave: (WorkspaceProfile, String?) -> Unit
-) {
-    var name by remember(original) { mutableStateOf(original?.name.orEmpty()) }
-    var useGlobal by remember(original) { mutableStateOf(original?.useGlobalPersona ?: true) }
-    var mentorPrompt by remember(original) { mutableStateOf(original?.mentorPrompt.orEmpty()) }
-    var worldBook by remember(original) { mutableStateOf(original?.worldBook.orEmpty()) }
-    var copyMenu by remember { mutableStateOf(false) }
-    val sources = conversations.filter { it.workspace != original?.name }
-    val cleanName = name.trim()
-    val duplicate = workspaces.any { it.name.equals(cleanName, ignoreCase = true) && it.name != original?.name }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (original == null) "新建工作区" else "编辑工作区") },
-        text = {
-            Column(Modifier.fillMaxWidth().heightIn(max = 540.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.Start) {
-                OutlinedTextField(value = name, onValueChange = { name = it.take(60) }, label = { Text("工作区名称") },
-                    singleLine = true, enabled = original?.name != WorkspaceProfile.DEFAULT_NAME, modifier = Modifier.fillMaxWidth())
-                if (duplicate) Text("已有同名工作区", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                Spacer(Modifier.height(12.dp))
-                Text("人格与世界书", fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = useGlobal, onClick = { useGlobal = true }, label = { Text("使用共同设定") })
-                    FilterChip(selected = !useGlobal, onClick = { useGlobal = false }, label = { Text("自定义设定") })
-                }
-                if (useGlobal) {
-                    Text("此工作区会跟随设置中的全局人格与世界书。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                } else {
-                    Box {
-                        OutlinedButton(onClick = { copyMenu = true }, enabled = sources.isNotEmpty(), modifier = Modifier.jarvisPressScale()) {
-                            Text("从其他对话快捷粘贴")
-                        }
-                        DropdownMenu(expanded = copyMenu, onDismissRequest = { copyMenu = false }) {
-                            sources.forEach { session ->
-                                DropdownMenuItem(text = { Text("${session.workspace} · ${session.title}") }, onClick = {
-                                    val profile = workspaces.firstOrNull { it.name == session.workspace }
-                                    mentorPrompt = profile?.resolvedMentorPrompt(globalPersona) ?: globalPersona
-                                    worldBook = profile?.resolvedWorldBook(globalWorldBook) ?: globalWorldBook
-                                    copyMenu = false
-                                })
-                            }
-                        }
-                    }
-                    if (sources.isEmpty()) Text("暂无其他对话可复制，可直接填写。", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = mentorPrompt, onValueChange = { mentorPrompt = it }, label = { Text("自定义人格 / 提示词") },
-                        minLines = 3, modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = worldBook, onValueChange = { worldBook = it }, label = { Text("自定义世界书") },
-                        minLines = 3, modifier = Modifier.fillMaxWidth())
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onSave(WorkspaceProfile(cleanName, useGlobal, mentorPrompt, worldBook), original?.name) },
-                enabled = cleanName.isNotEmpty() && !duplicate) { Text(if (original == null) "创建并进入" else "保存") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
-}
-
-@Composable
-private fun RuntimeStatusCard(
-    report: BootstrapReport,
-    onRefresh: () -> Unit,
-    runtimeMessage: String,
-    onRecovery: () -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit
-) {
-    val statusText = when (report.state) {
-        RuntimeState.READY -> "就绪"
-        RuntimeState.RUNNING -> "运行中"
-        RuntimeState.DEGRADED -> "兼容模式"
-        RuntimeState.NOT_CONFIGURED -> "未配置"
-        RuntimeState.ERROR -> "配置错误"
-    }
-    val statusColor = when (report.state) {
-        RuntimeState.READY, RuntimeState.RUNNING -> MaterialTheme.colorScheme.primary
-        RuntimeState.DEGRADED -> MaterialTheme.colorScheme.onSurfaceVariant
-        else -> MaterialTheme.colorScheme.error
-    }
-    SettingsCard(Icons.Default.Code, "OpenClaw 运行时", "单 APK 运行目录和插件目录状态") {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(statusText, color = statusColor, fontWeight = FontWeight.SemiBold)
-                Text(report.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            }
-            TextButton(onClick = onRefresh, modifier = Modifier.jarvisPressScale()) { Text("重新检查") }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("版本：${report.runtimeVersion}", fontSize = 12.sp)
-        Text("root：${if (report.rootAvailable) "已检测到" else "未检测到"} · Bridge Token：${if (report.bridgeTokenReady) "已生成" else "缺失"}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("插件目录：${report.pluginDirectory}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (runtimeMessage.isNotBlank()) {
-            Spacer(Modifier.height(8.dp))
-            Text(runtimeMessage, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onStart, modifier = Modifier.jarvisPressScale()) { Text("启动 Gateway") }
-            OutlinedButton(onClick = onStop, modifier = Modifier.jarvisPressScale()) { Text("停止") }
-        }
-        Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = onRecovery, modifier = Modifier.fillMaxWidth().jarvisPressScale()) {
-            Icon(Icons.Default.Build, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("运行时修复 / Termux 备用方案")
-        }
-    }
-}
-
-@Composable
-private fun ConfigurationActions(config: JarvisConfig) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
-    val latestConfig by rememberUpdatedState(config)
-    var busy by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf("") }
-    var failed by remember { mutableStateOf(false) }
-
-    fun applyConfiguration(verify: Boolean) {
-        val snapshot = config
-        val saved = runCatching { ConfigStore(context).save(snapshot, durable = true) }.getOrDefault(false)
-        if (!saved) {
-            failed = true
-            notice = "保存失败，请检查手机存储空间后重试。"
-            return
-        }
-        busy = true
-        failed = false
-        notice = "配置已保存，正在应用到 OpenClaw…"
-        scope.launch {
-            try {
-                val started = OpenClawProcessManager.get(context).start()
-                if (!started.started) {
-                    failed = true
-                    notice = "配置已保存；OpenClaw 尚未就绪：${started.message}"
-                } else if (verify) {
-                    notice = "配置已应用，正在验证主模型连接…"
-                    val result = withContext(Dispatchers.IO) {
-                        val selectedModel = if (snapshot.deepThinkingEnabled) snapshot.deepThinkingModel.ifBlank { snapshot.modelName } else snapshot.modelName
-                        ModelConnectionChecker.test(snapshot.modelBaseUrl, snapshot.modelApiKey, selectedModel)
-                    }
-                    failed = !result.ok
-                    notice = "配置已保存并应用。${result.message}"
-                } else {
-                    notice = "配置已保存并应用，OpenClaw 已就绪。"
-                }
-                if (latestConfig != snapshot) notice += " 检测到新的修改，请再次保存并应用。"
-            } catch (error: Exception) {
-                if (error is kotlinx.coroutines.CancellationException) throw error
-                failed = true
-                notice = "配置已保存；应用配置失败，请重新启动 Gateway 后重试。"
-            } finally {
-                busy = false
-            }
-        }
-    }
-
-    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { applyConfiguration(false) }, enabled = !busy, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("保存并应用") }
-            OutlinedButton(onClick = { applyConfiguration(true) }, enabled = !busy, modifier = Modifier.weight(1f).jarvisPressScale()) { Text(if (busy) "处理中…" else "保存并验证") }
-        }
-        Text(
-            notice.ifBlank { "编辑内容自动保存在本机；保存并应用可更新智能体。验证会发起一次简短的主模型请求。" },
-            color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-    }
-}
-
-@Composable
-private fun OperationMemoryCard() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
-    var status by remember { mutableStateOf("正在读取操作记忆…") }
-    var routes by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    fun refresh(action: String = "list", id: String = "") {
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val bridge = com.jarvis.app.runtime.DeviceCapabilityBridge(context)
-                    fun call(args: JSONObject) = bridge.execute(com.jarvis.app.runtime.CapabilityRequest(
-                        "operation.memory", args, com.jarvis.app.runtime.CapabilityRisk.LOW, false))
-                    if (action == "forget") call(JSONObject().put("action", action).put("id", id))
-                    val data = call(JSONObject().put("action", "list")).data.optJSONArray("recipes") ?: JSONArray()
-                    com.jarvis.app.runtime.OperationMemory.at(context.filesDir).summary() to
-                        (0 until data.length()).map { data.getJSONObject(it) }
-                }
-            }
-            result.onSuccess { status = it.first; routes = it.second }
-                .onFailure { status = "读取失败：${it.message}" }
-        }
-    }
-    LaunchedEffect(Unit) {
-        while (true) {
-            refresh()
-            delay(1000)
-        }
-    }
-    SettingsCard(Icons.Default.Build, "操作记忆", "首次成功后学习，后续优先复用；失败时重新探索") {
-        Text(status, fontSize = 13.sp)
-        Text("保存在本机，重装内置运行时仍保留。可在对话中要求查看、更新或删除路径。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = { refresh() }) { Text("刷新操作路径") }
-        routes.forEach { route ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(route.optString("title"), fontSize = 14.sp)
-                    Text("${if (route.optString("status") == "ready") "可复用" else "已失效，待重新学习"} · 成功 ${route.optInt("successes")} / 失败 ${route.optInt("failures")}", fontSize = 12.sp)
-                }
-                TextButton(onClick = { refresh("forget", route.getString("id")) }) { Text("删除") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AccessibilityControlCard() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val manager = remember(context) { AccessibilityStartupManager(context) }
-    val scope = rememberCoroutineScope()
-    var autoConnect by remember { mutableStateOf(manager.autoConnect) }
-    var status by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-
-    fun refresh() {
-        status = when {
-            AccessibilityController.service != null -> "无障碍已连接，可以操作当前屏幕"
-            manager.isEnabled() -> "系统已启用无障碍，等待服务连接"
-            else -> "无障碍未启用"
-        }
-    }
-    LaunchedEffect(Unit) { refresh() }
-
-    SettingsCard(Icons.Default.Tune, "屏幕操作", "读取界面、输入中文和执行点击；自动连接需 root 完全模式") {
-        Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-        Spacer(Modifier.height(8.dp))
-        SettingSwitch("打开 Jarvis 时自动连接", "需要 root 完全模式；关闭此项不会撤销已有授权", autoConnect) {
-            autoConnect = it
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                manager.autoConnect = autoConnect
-                status = if (autoConnect) "已保存，正在连接…" else "已保存；下次打开时不自动连接"
-                if (autoConnect) scope.launch {
-                    busy = true
-                    status = withContext(Dispatchers.IO) { manager.connectWithRoot() }
-                    busy = false
-                }
-            }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("保存") }
-            OutlinedButton(onClick = {
-                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }, modifier = Modifier.jarvisPressScale()) { Text("手动授权") }
-            TextButton(onClick = ::refresh, modifier = Modifier.jarvisPressScale()) { Text("刷新") }
-        }
-    }
-}
-
-@Composable
-private fun FloatingAssistantSettingsCard() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val prefs = remember(context) { context.getSharedPreferences("jarvis_config", Context.MODE_PRIVATE) }
-    val accessibility = remember(context) { AccessibilityStartupManager(context) }
-    var enabled by remember { mutableStateOf(prefs.getBoolean("floatingAssistantEnabled", false)) }
-    var appearance by remember { mutableStateOf(FloatingAssistantPreferences.load(context)) }
-    val savedAutomations = remember(context) { AutomationManager(context).list() }
-    var doubleTaskMenu by remember { mutableStateOf(false) }
-    var tripleTaskMenu by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf("") }
-    var permissionRevision by remember { mutableStateOf(0) }
-    val activity = context as? ComponentActivity
-    DisposableEffect(activity) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                permissionRevision += 1
-                enabled = prefs.getBoolean("floatingAssistantEnabled", false)
-            }
-        }
-        activity?.lifecycle?.addObserver(observer)
-        onDispose { activity?.lifecycle?.removeObserver(observer) }
-    }
-    val overlayGranted = remember(permissionRevision) { Settings.canDrawOverlays(context) }
-    val accessibilityGranted = remember(permissionRevision) { accessibility.isEnabled() }
-
-    fun openOverlayPermission() {
-        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
-        runCatching { context.startActivity(intent) }
-            .onFailure { notice = "无法打开悬浮窗权限设置：${it.message ?: "请到系统应用权限中手动授权"}" }
-    }
-
-    fun enableFloatingAssistant() {
-        prefs.edit().putBoolean("floatingAssistantEnabled", true).apply()
-        enabled = true
-        if (!Settings.canDrawOverlays(context)) {
-                notice = "请在系统页面允许 Jarvis 显示在其他应用上层，然后返回。"
-                openOverlayPermission()
-        } else {
-            FloatingAssistantService.show(context)
-            notice = if (accessibility.isEnabled()) "悬浮助手已启动。"
-                else "悬浮助手已启动；无障碍授权仅在需要控制屏幕和显示操作进度时使用。"
-        }
-    }
-
-    fun saveAppearance(next: FloatingAssistantPreferences) {
-        appearance = next
-        next.save(context)
-        if (enabled && Settings.canDrawOverlays(context)) FloatingAssistantService.refresh(context)
-    }
-
-    SettingsCard(Icons.Default.Build, "悬浮助手", "在其他应用上显示快捷球、语音任务、小窗对话与屏幕操作进度") {
-        SettingSwitch("启用悬浮球", "语音任务识别后会直接交给 Jarvis 执行；首次需要系统悬浮窗和无障碍授权", enabled) { checked ->
-            if (checked) enableFloatingAssistant() else {
-                prefs.edit().putBoolean("floatingAssistantEnabled", false).apply()
-                enabled = false
-                FloatingAssistantService.hide(context)
-                notice = "悬浮助手已关闭。"
-            }
-        }
-        Text(
-        "悬浮窗：${if (overlayGranted) "已授权" else "未授权"} · 无障碍：${if (accessibilityGranted) "已启用" else "未启用"}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = ::openOverlayPermission, modifier = Modifier.jarvisPressScale()) { Text("悬浮窗权限") }
-            OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, modifier = Modifier.jarvisPressScale()) { Text("无障碍设置") }
-        }
-        Spacer(Modifier.height(10.dp))
-        Text("头像外观", fontWeight = FontWeight.SemiBold)
-        Text("默认使用当前主题头像；主题切换后自动更新。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            FloatingShape.entries.forEach { shape ->
-                FilterChip(selected = appearance.shape == shape, onClick = { saveAppearance(appearance.copy(shape = shape)) },
-                    label = { Text(shape.label) })
-            }
-        }
-        Text("大小：${appearance.sizeDp} dp")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            listOf(44, 56, 68, 80, 88).forEach { size ->
-                FilterChip(selected = appearance.sizeDp == size, onClick = { saveAppearance(appearance.copy(sizeDp = size)) },
-                    label = { Text("$size") })
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("双击操作", fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            FloatingGestureAction.entries.forEach { action ->
-                FilterChip(selected = appearance.doubleTap == action, onClick = { saveAppearance(appearance.copy(doubleTap = action)) },
-                    label = { Text(action.label) })
-            }
-        }
-        if (appearance.doubleTap == FloatingGestureAction.Task) {
-            OutlinedTextField(value = appearance.doubleTapTask,
-                onValueChange = { saveAppearance(appearance.copy(doubleTapTask = it.take(4000))) },
-                label = { Text("双击时执行的任务") }, placeholder = { Text("例如：播放一首歌") }, modifier = Modifier.fillMaxWidth())
-            Box {
-                TextButton(onClick = { doubleTaskMenu = true }, enabled = savedAutomations.isNotEmpty()) { Text("选用已有自动化") }
-                DropdownMenu(expanded = doubleTaskMenu, onDismissRequest = { doubleTaskMenu = false }) {
-                    savedAutomations.forEach { rule -> DropdownMenuItem(text = { Text(rule.title) }, onClick = {
-                        saveAppearance(appearance.copy(doubleTapTask = rule.sourcePrompt)); doubleTaskMenu = false
-                    }) }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("三击操作", fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            FloatingGestureAction.entries.forEach { action ->
-                FilterChip(selected = appearance.tripleTap == action, onClick = { saveAppearance(appearance.copy(tripleTap = action)) },
-                    label = { Text(action.label) })
-            }
-        }
-        if (appearance.tripleTap == FloatingGestureAction.Task) {
-            OutlinedTextField(value = appearance.tripleTapTask,
-                onValueChange = { saveAppearance(appearance.copy(tripleTapTask = it.take(4000))) },
-                label = { Text("三击时执行的任务") }, placeholder = { Text("例如：执行已配置的自动化任务") }, modifier = Modifier.fillMaxWidth())
-            Box {
-                TextButton(onClick = { tripleTaskMenu = true }, enabled = savedAutomations.isNotEmpty()) { Text("选用已有自动化") }
-                DropdownMenu(expanded = tripleTaskMenu, onDismissRequest = { tripleTaskMenu = false }) {
-                    savedAutomations.forEach { rule -> DropdownMenuItem(text = { Text(rule.title) }, onClick = {
-                        saveAppearance(appearance.copy(tripleTapTask = rule.sourcePrompt)); tripleTaskMenu = false
-                    }) }
-                }
-            }
-        }
-        if (appearance.doubleTap == FloatingGestureAction.Hide || appearance.tripleTap == FloatingGestureAction.Hide) {
-            Text("暂时隐藏：${appearance.hideSeconds} 秒")
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf(5, 15, 30, 60, 300).forEach { seconds ->
-                    FilterChip(selected = appearance.hideSeconds == seconds,
-                        onClick = { saveAppearance(appearance.copy(hideSeconds = seconds)) }, label = { Text("${seconds}秒") })
-                }
-            }
-        }
-        Text("单点打开小窗，长按启动语音识别；识别完成后 1 秒内单点可修改文字，未操作则自动执行。",
-            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        if (notice.isNotBlank()) Text(notice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun RemoteAccessCard() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val manager = remember(context) { com.jarvis.app.runtime.RemoteAccessManager(context) }
-    var enabled by remember { mutableStateOf(manager.enabled) }
-    var deviceControl by remember { mutableStateOf(manager.remoteDeviceControl) }
-    var pairing by remember { mutableStateOf(manager.currentPairingInfo()) }
-    var urls by remember { mutableStateOf(manager.localUrls()) }
-    var notice by remember { mutableStateOf("") }
-
-    fun syncService() {
-        val intent = Intent(context, JarvisBridgeService::class.java).setAction(JarvisBridgeService.ACTION_SYNC_REMOTE)
-        runCatching { ContextCompat.startForegroundService(context, intent) }
-            .onFailure { notice = "服务同步失败：${it.message ?: "请重新打开 Jarvis"}" }
-    }
-
-    SettingsCard(Icons.Default.Code, "远程连接", "通过局域网或 Tailscale 访问网页控制台，不镜像屏幕也不发送远程触控") {
-        SettingSwitch("启用远程网页控制台", "默认关闭；只允许已配对的浏览器提交任务", enabled) {
-            enabled = it
-            manager.enabled = it
-            if (!it) {
-                manager.remoteDeviceControl = false
-                deviceControl = false
-                manager.revoke()
-                pairing = null
-                notice = "远程连接已关闭，已有配对令牌已失效"
-            } else {
-                pairing = manager.newPairingCode()
-                urls = manager.localUrls()
-                notice = "远程连接已开启，请在 5 分钟内完成配对"
-            }
-            syncService()
-        }
-        AnimatedVisibility(visible = enabled, enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.98f, animationSpec = tween(180)), exit = fadeOut(tween(120))) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (pairing != null) {
-                    Text("一次性配对码", fontWeight = FontWeight.SemiBold)
-                    Text(pairing!!.code, style = MaterialTheme.typography.headlineMedium, letterSpacing = 5.sp, color = MaterialTheme.colorScheme.primary)
-                    Text("有效至 ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(pairing!!.expiresAt))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    Text("还没有配对码，点击下方生成。", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                OutlinedButton(onClick = {
-                    pairing = manager.newPairingCode()
-                    urls = manager.localUrls()
-                    notice = "已生成新的 5 分钟配对码，旧码已失效"
-                }, modifier = Modifier.jarvisPressScale()) { Text("生成新配对码") }
-                SettingSwitch("允许远程设备操作", "关闭时远程端只能对话和整理计划，不会调用无障碍、相机、应用启动或 root 工具", deviceControl) {
-                    deviceControl = it
-                    manager.remoteDeviceControl = it
-                    notice = if (it) "已允许远程任务调用设备能力" else "已禁止远程任务调用设备能力"
-                }
-                if (urls.isNotEmpty()) {
-                    Text("在同一网络设备打开：", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    urls.forEach { Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp) }
-                } else {
-                    Text("暂未发现局域网或 Tailscale 地址；确认手机已连接网络后刷新。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { urls = manager.localUrls(); notice = "地址已刷新" }, modifier = Modifier.jarvisPressScale()) { Text("刷新地址") }
-                    TextButton(onClick = {
-                        manager.revoke()
-                        pairing = null
-                        notice = "已撤销所有远程配对，现有浏览器会立即失效"
-                    }, modifier = Modifier.jarvisPressScale()) { Text("撤销配对") }
-                }
-                Text("不要在路由器上做端口映射。Tailscale 请使用手机显示的 100.x 地址；远程任务会和手机本机任务排队，不会同时驱动无障碍服务。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-            }
-        }
-        if (notice.isNotBlank()) Text(notice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-    }
-}
-
 private fun parseGeneratedPlugin(raw: String): GeneratedOpenClawPlugin {
     val trimmed = raw.trim()
         .removePrefix("```json").removePrefix("```JSON").removePrefix("```")
@@ -2171,485 +2333,7 @@ private fun parseGeneratedPlugin(raw: String): GeneratedOpenClawPlugin {
     )
 }
 
-@Composable
-private fun CommunityPluginsCard(config: JarvisConfig) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val manager = remember(context) { CommunityPluginManager(context) }
-    val scope = rememberCoroutineScope()
-    var plugins by remember { mutableStateOf<List<ManagedOpenClawPlugin>>(emptyList()) }
-    var generatedDraft by remember { mutableStateOf<GeneratedOpenClawPlugin?>(null) }
-    var request by remember { mutableStateOf("") }
-    var notice by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var pendingEnable by remember { mutableStateOf<ManagedOpenClawPlugin?>(null) }
-    var pendingRemove by remember { mutableStateOf<ManagedOpenClawPlugin?>(null) }
 
-    fun refresh() {
-        scope.launch { plugins = withContext(Dispatchers.IO) { manager.list() } }
-    }
-
-    fun setPluginEnabled(plugin: ManagedOpenClawPlugin, enabled: Boolean) {
-        scope.launch {
-            busy = true
-            val outcome = runCatching {
-                val result = DeviceTaskCoordinator.run("加载插件") {
-                    withContext(Dispatchers.IO) { manager.setEnabled(plugin.id, enabled) }
-                    OpenClawProcessManager.get(context).start()
-                }
-                plugins = withContext(Dispatchers.IO) { manager.list() }
-                if (result.started) {
-                    if (enabled) "${plugin.name} 已启用，OpenClaw Gateway 已重载。"
-                    else "${plugin.name} 已停用，OpenClaw Gateway 已重载。"
-                } else {
-                    "插件状态已保存；Gateway 重载失败：${result.message}"
-                }
-            }
-            outcome.onSuccess { notice = it }.onFailure { notice = "插件状态更新失败：${it.message ?: "未知错误"}" }
-            busy = false
-        }
-    }
-
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            busy = true
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use(manager::installArchive)
-                        ?: error("无法读取插件压缩包")
-                }
-            }
-            result.onSuccess {
-                plugins = withContext(Dispatchers.IO) { manager.list() }
-                notice = "已导入 ${it.name} ${it.version}；插件当前停用，审阅后再启用。"
-            }.onFailure { notice = "插件导入失败：${it.message ?: "压缩包格式不支持"}" }
-            busy = false
-        }
-    }
-
-    fun generateDraft() {
-        if (request.isBlank()) {
-            notice = "先描述你想添加的插件功能。"
-            return
-        }
-        if (config.modelBaseUrl.isBlank() || config.modelName.isBlank()) {
-            notice = "请先在“模型连接”中配置主模型。"
-            return
-        }
-        busy = true
-        notice = "Jarvis 正在编写插件草稿…"
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val prompt = buildString {
-                        appendLine("根据以下功能需求生成一个 Jarvis 可安装的 OpenClaw JavaScript 插件草稿。")
-                        appendLine("需求：${request.trim().take(1200)}")
-                        appendLine("只输出一个 JSON 对象，不要 Markdown 或解释，字段为 id、name、version、description、tools（字符串数组）、source（完整 ESM 源码字符串）。")
-                        appendLine("id 使用 3–40 位小写字母/数字/短横线，必须以小写字母开头；version 用 1.0.0 形式。tools 至少一个，每个工具名以小写字母开头，只含小写字母、数字和下划线。")
-                        appendLine("源码必须 export default 一个 { id, name, register(api) } 插件。每个工具按 api.registerTool(() => ({name,label,description,parameters,execute}), {name}) 注册；parameters 使用 JSON Schema，execute 返回 {content:[{type:'text',text:'结果'}]}。")
-                        appendLine("生成纯 JavaScript 工具。不要使用 eval、Function、require、process、文件系统、子进程、网络请求、Android/root/无障碍 API；不要内置密钥、自动发送消息、发布内容或执行破坏操作。工具名必须与 tools 数组完全一致。")
-                        appendLine("参考结构：export default { id:'sample-tool', name:'Sample Tool', register(api) { api.registerTool(() => ({ name:'sample_tool', label:'Sample Tool', description:'...', parameters:{type:'object',additionalProperties:false,properties:{}}, execute:async (_id,args)=>({content:[{type:'text',text:'...'}]}) }), {name:'sample_tool'}); } };")
-                    }
-                    val messages = JSONArray()
-                        .put(JSONObject().put("role", "system").put("content", "你是 Jarvis 的 OpenClaw 插件开发器。输出符合用户要求的 JSON 插件草稿，源码需可读、最小化并只实现所描述的功能。"))
-                        .put(JSONObject().put("role", "user").put("content", prompt))
-                    val response = requestChatCompletion(
-                        config.modelBaseUrl, config.modelApiKey,
-                        config.deepThinkingModel.takeIf { config.deepThinkingEnabled && it.isNotBlank() } ?: config.modelName,
-                        messages,
-                        if (config.deepThinkingEnabled) config.reasoningEffort else "off"
-                    )
-                    parseGeneratedPlugin(response)
-                }
-            }
-            result.onSuccess {
-                generatedDraft = it
-                notice = "草稿已生成。检查插件标识、工具清单和源码，再手动安装；安装后仍默认停用。"
-            }.onFailure { notice = "生成失败：${it.message ?: "请检查模型连接"}" }
-            busy = false
-        }
-    }
-
-    LaunchedEffect(Unit) { refresh() }
-
-    SettingsCard(Icons.Default.Extension, "插件管理", "导入 OpenClaw 插件 ZIP，或让 Jarvis 按需求生成源码草稿") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*")) },
-                enabled = !busy, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("导入插件 ZIP") }
-            OutlinedButton(onClick = { refresh() }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("刷新") }
-        }
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = request,
-            onValueChange = { request = it.take(1200) },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            label = { Text("描述插件功能") },
-            placeholder = { Text("例如：提供一个把用户输入整理成待办清单的工具") }
-        )
-        Button(onClick = ::generateDraft, enabled = !busy, modifier = Modifier.padding(top = 8.dp).jarvisPressScale()) {
-            Text(if (busy) "处理中…" else "让 Jarvis 编写插件草稿")
-        }
-        if (generatedDraft != null) {
-            val draft = generatedDraft!!
-            Spacer(Modifier.height(12.dp))
-            Text("插件草稿（安装前可编辑）", fontWeight = FontWeight.SemiBold)
-            Text("ID：${draft.id}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(6.dp))
-            Text("${draft.name} · ${draft.version} · 工具：${draft.tools.joinToString().ifBlank { "未识别" }}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(value = draft.source, onValueChange = { generatedDraft = draft.copy(source = it) },
-                modifier = Modifier.fillMaxWidth(), minLines = 8, maxLines = 20, label = { Text("JavaScript 源码") })
-            Text("源码会在手机内置 OpenClaw Gateway 进程中运行。导入或生成的代码都应先审阅；启用插件前会再次确认。", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    scope.launch {
-                        busy = true
-                        val install = withContext(Dispatchers.IO) { runCatching { manager.installGenerated(draft) } }
-                        install.onSuccess {
-                            plugins = withContext(Dispatchers.IO) { manager.list() }
-                            generatedDraft = null
-                            notice = "${it.name} 已安装并保持停用。审阅后可在下方启用。"
-                        }.onFailure { notice = "安装失败：${it.message ?: "插件草稿无效"}" }
-                        busy = false
-                    }
-                }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("安装草稿（保持停用）") }
-                TextButton(onClick = { generatedDraft = null }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("丢弃") }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        if (plugins.isEmpty()) {
-            Text("还没有安装用户插件。导入包需在 ZIP 根目录包含 openclaw.plugin.json、package.json 和 JavaScript 入口文件。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            plugins.forEach { plugin ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(plugin.name, fontWeight = FontWeight.SemiBold)
-                            Text("${plugin.id} · v${plugin.version}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(checked = plugin.enabled, onCheckedChange = { enabled ->
-                            if (enabled) pendingEnable = plugin else setPluginEnabled(plugin, false)
-                        }, enabled = !busy)
-                    }
-                    if (plugin.description.isNotBlank()) Text(plugin.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("工具：${plugin.tools.joinToString().ifBlank { "未声明" }} · 来源：${if (plugin.source == "generated") "Jarvis 生成" else "本机导入"}", fontSize = 11.sp)
-                    TextButton(onClick = { pendingRemove = plugin }, enabled = !busy, modifier = Modifier.jarvisPressScale()) { Text("卸载") }
-                }
-                Divider(color = MaterialTheme.colorScheme.outlineVariant)
-            }
-        }
-        if (notice.isNotBlank()) Text(notice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-    }
-
-    pendingEnable?.let { plugin ->
-        AlertDialog(
-            onDismissRequest = { pendingEnable = null },
-            title = { Text("启用插件？") },
-            text = { Text("${plugin.name} 的 JavaScript 将与 OpenClaw Gateway 在同一进程运行。第三方插件可能联网、读取 Gateway 环境数据，并调用 Gateway 已有设备能力（包括当前配置允许的 root 能力）。Jarvis 无法提供进程级沙箱；请确认已审阅来源和源码。") },
-            confirmButton = { Button(onClick = { pendingEnable = null; setPluginEnabled(plugin, true) }) { Text("我已审阅，启用") } },
-            dismissButton = { TextButton(onClick = { pendingEnable = null }) { Text("取消") } }
-        )
-    }
-    pendingRemove?.let { plugin ->
-        AlertDialog(
-            onDismissRequest = { pendingRemove = null },
-            title = { Text("卸载 ${plugin.name}？") },
-            text = { Text("将删除本机插件文件，并重载 OpenClaw Gateway。") },
-            confirmButton = {
-                Button(onClick = {
-                    pendingRemove = null
-                    scope.launch {
-                        busy = true
-                        val result = runCatching {
-                            DeviceTaskCoordinator.run("卸载插件") {
-                                withContext(Dispatchers.IO) { manager.remove(plugin.id) }
-                                OpenClawProcessManager.get(context).start()
-                            }
-                        }
-                        if (result.isSuccess) {
-                            plugins = withContext(Dispatchers.IO) { manager.list() }
-                            val reload = result.getOrThrow()
-                            notice = if (reload.started) "已卸载 ${plugin.name} 并重载 Gateway。" else "插件已卸载；Gateway 重载失败：${reload.message}"
-                        } else notice = "卸载失败：${result.exceptionOrNull()?.message}"
-                        busy = false
-                    }
-                }) { Text("卸载") }
-            },
-            dismissButton = { TextButton(onClick = { pendingRemove = null }) { Text("取消") } }
-        )
-    }
-}
-
-@Composable
-private fun SettingsScreen(
-    padding: PaddingValues,
-    config: JarvisConfig,
-    bootstrapReport: BootstrapReport,
-    onRefreshRuntime: () -> Unit,
-    runtimeMessage: String,
-    onRecovery: () -> Unit,
-    onStartRuntime: () -> Unit,
-    onStopRuntime: () -> Unit,
-    onRestrictionChange: (Boolean) -> Unit,
-    onCommandChange: (Boolean) -> Unit,
-    onPrefixChange: (String) -> Unit,
-    onModelBaseUrlChange: (String) -> Unit,
-    onModelNameChange: (String) -> Unit,
-    onModelApiKeyChange: (String) -> Unit,
-    onModelChainChange: (String) -> Unit,
-    onDeepThinkingChange: (Boolean) -> Unit,
-    onReasoningEffortChange: (String) -> Unit,
-    onDeepThinkingModelChange: (String) -> Unit,
-    onVisionBaseUrlChange: (String) -> Unit,
-    onVisionApiKeyChange: (String) -> Unit,
-    onVisionModelChange: (String) -> Unit,
-    onMentorPromptChange: (String) -> Unit,
-    onWorldBookChange: (String) -> Unit,
-    onThemeChange: (JarvisTheme) -> Unit,
-    configNotice: String,
-    onImportAiClassroom: () -> Unit,
-    onExportAiClassroom: () -> Unit,
-    onRootModeRequest: (RootMode) -> Unit
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val toolManager = remember { RuntimeToolManager(context) }
-    val toolScope = rememberCoroutineScope()
-    var toolStatuses by remember { mutableStateOf<List<RuntimeToolStatus>>(emptyList()) }
-    var checkingTools by remember { mutableStateOf(true) }
-    var toolNotice by remember { mutableStateOf("") }
-
-    fun refreshTools() {
-        checkingTools = true
-        toolScope.launch {
-            val result = withContext(Dispatchers.IO) { toolManager.inspect() }
-            toolStatuses = result
-            checkingTools = false
-        }
-    }
-
-    LaunchedEffect(Unit) { refreshTools() }
-
-    Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp), horizontalAlignment = Alignment.Start) {
-        Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Text("Jarvis ${BuildConfig.VERSION_NAME} · 模型、权限与设备连接", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-            item { ConfigurationActions(config) }
-            item { AccessibilityControlCard() }
-            item { FloatingAssistantSettingsCard() }
-            item { RemoteAccessCard() }
-            item {
-                SettingsCard(Icons.Default.Tune, "风格与外观", "图片与控件同步切换，每套主题使用统一色系", saveConfig = config) {
-                    ThemePicker(config.theme, onThemeChange)
-                }
-            }
-            item {
-                RuntimeStatusCard(bootstrapReport, onRefreshRuntime, runtimeMessage, onRecovery, onStartRuntime, onStopRuntime)
-            }
-            item { OperationMemoryCard() }
-            item {
-                SettingsCard(Icons.Default.Shield, "限制模式", "默认开启，控制高风险内容和动作", saveConfig = config) {
-                    SettingSwitch("限制模式", "关闭后会持续显示警告状态", config.restrictionMode, onRestrictionChange)
-                }
-            }
-            item {
-                SettingsCard(Icons.Default.Lock, "root 模式", "完全模式会在启用前显示三秒警告", saveConfig = config) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        RootMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = config.rootMode == mode,
-                                onClick = { onRootModeRequest(mode) },
-                                modifier = Modifier.jarvisPressScale(),
-                                label = { Text(mode.label) }
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text("当前：${config.rootMode.label}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            item {
-                SettingsCard(Icons.Default.Terminal, "QQ 命令通道", "指定会话可发送 /claw 命令，其余消息走普通人格", saveConfig = config) {
-                    SettingSwitch("启用命令通道", "首版默认只做预览，不直接执行", config.commandChannelEnabled, onCommandChange)
-                    AnimatedVisibility(visible = config.commandChannelEnabled, enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.98f, animationSpec = tween(180)), exit = fadeOut(tween(120))) {
-                        OutlinedTextField(
-                            value = config.commandPrefix,
-                            onValueChange = onPrefixChange,
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text("命令前缀") }
-                        )
-                    }
-                }
-            }
-            item {
-                SettingsCard(Icons.Default.Build, "模型连接", "兼容 OpenAI Chat Completions 的服务", saveConfig = config, applyGateway = true) {
-                    OutlinedTextField(
-                        value = config.modelBaseUrl,
-                        onValueChange = onModelBaseUrlChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("Base URL") },
-                        placeholder = { Text("https://api.openai.com/v1") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = config.modelName,
-                        onValueChange = onModelNameChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("模型名") },
-                        placeholder = { Text("gpt-4o-mini") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = config.modelApiKey,
-                        onValueChange = onModelApiKeyChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("API Key") },
-                        visualTransformation = PasswordVisualTransformation()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = config.modelChain,
-                        onValueChange = onModelChainChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                        label = { Text("模型回退链（每行一个，可选）") },
-                        placeholder = { Text("主模型失败时按顺序尝试") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    SettingSwitch(
-                        "深度思考",
-                        "关闭时不发送 reasoning_effort；开启后由下方档位控制",
-                        config.deepThinkingEnabled,
-                        onDeepThinkingChange
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text("思考深度：${normalizeReasoningEffort(config.reasoningEffort)}", fontSize = 13.sp)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        reasoningEfforts.chunked(3).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                row.forEach { effort ->
-                                    FilterChip(
-                                        selected = normalizeReasoningEffort(config.reasoningEffort) == effort,
-                                        onClick = { onReasoningEffortChange(effort) },
-                                        modifier = Modifier.jarvisPressScale(),
-                                        label = { Text(effort) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = config.deepThinkingModel,
-                        onValueChange = onDeepThinkingModelChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("深度思考模型（可选）") },
-                        placeholder = { Text("留空则使用主模型") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text("识图请求会使用单独的多模态配置；未填写时回退到主模型。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-            }
-            item {
-                SettingsCard(Icons.Default.DarkMode, "识图模型", "用于相机取样、截图和多模态任务，兼容 OpenAI image_url 格式", saveConfig = config) {
-                    OutlinedTextField(
-                        value = config.visionBaseUrl,
-                        onValueChange = onVisionBaseUrlChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("识图 Base URL") },
-                        placeholder = { Text("留空继承主模型 Base URL") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = config.visionModel,
-                        onValueChange = onVisionModelChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("识图模型名") },
-                        placeholder = { Text("gpt-4o-mini") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = config.visionApiKey,
-                        onValueChange = onVisionApiKeyChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("识图 API Key") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        placeholder = { Text("留空继承主模型 API Key") }
-                    )
-                }
-            }
-            item {
-                SettingsCard(Icons.Default.Extension, "AI Classroom 配置同步", "导入课堂配置文件，或导出 Jarvis 可再次导入的兼容 JSON") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = onImportAiClassroom, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("导入") }
-                        OutlinedButton(onClick = onExportAiClassroom, modifier = Modifier.weight(1f).jarvisPressScale()) { Text("导出") }
-                    }
-                    if (configNotice.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(configNotice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text("支持 AI Classroom 的 classes JSON（会读取第一个课堂的 config），也支持单独的 config JSON。API Key 只在本机配置中保存。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-            }
-            item {
-                SettingsCard(Icons.Default.Chat, "全局人格与世界书", "供选择“使用共同设定”的工作区使用；自定义工作区在工作区页编辑", saveConfig = config) {
-                    OutlinedTextField(
-                        value = config.mentorPrompt,
-                        onValueChange = onMentorPromptChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        label = { Text("全局提示词") }
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = config.worldBook,
-                        onValueChange = onWorldBookChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        label = { Text("全局世界书") }
-                    )
-                }
-            }
-            item {
-                CommunityPluginsCard(config)
-            }
-            item {
-                SettingsCard(Icons.Default.Extension, "运行时工具", "查看 CMake、FFmpeg、Python、Rust、Git 等命令是否可用") {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Text("工具状态", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { refreshTools(); toolNotice = "正在检查工具路径" }, enabled = !checkingTools, modifier = Modifier.jarvisPressScale()) { Text("刷新") }
-                    }
-                    if (checkingTools && toolStatuses.isEmpty()) {
-                        Text("正在检查内置运行时、系统/root 和 Termux…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    } else {
-                        toolStatuses.forEach { status ->
-                            PluginToolRow(status) {
-                                val result = toolManager.install(status)
-                                toolNotice = result.message
-                                if (result.success) refreshTools()
-                            }
-                        }
-                    }
-                    if (toolNotice.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(toolNotice, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text("语音转文字使用手机系统语音服务；CMake、FFmpeg 等命令由设备或 Termux 提供。Termux 需开启“允许外部应用运行命令”。Jarvis 不会把未经校验的二进制写入系统目录。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun PluginToolRow(status: RuntimeToolStatus, onInstall: () -> Unit) {
@@ -2696,114 +2380,9 @@ private fun RuntimeRecoveryDialog(
     )
 }
 
-@Composable
-private fun SettingsCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    saveConfig: JarvisConfig? = null,
-    applyGateway: Boolean = false,
-    content: @Composable () -> Unit
-) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth().animateContentSize()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.Start) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(12.dp)) {
-                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(10.dp).size(20.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                    Text(title, fontWeight = FontWeight.SemiBold)
-                    Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            content()
-            if (saveConfig != null) {
-                Spacer(Modifier.height(12.dp))
-                SettingsSaveAction(title, saveConfig, applyGateway)
-            }
-        }
-    }
-}
 
-@Composable
-private fun SettingsSaveAction(section: String, config: JarvisConfig, applyGateway: Boolean) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
-    val latestConfig by rememberUpdatedState(config)
-    var busy by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf("") }
-    var failed by remember { mutableStateOf(false) }
-    LaunchedEffect(config) {
-        if (!busy) notice = ""
-    }
 
-    Column(horizontalAlignment = Alignment.Start) {
-        OutlinedButton(onClick = {
-            val snapshot = config
-            if (!ConfigStore(context).save(snapshot, durable = true)) {
-                failed = true
-                notice = "$section 保存失败，请检查手机存储空间。"
-                return@OutlinedButton
-            }
-            failed = false
-            if (applyGateway) {
-                busy = true
-                notice = "$section 已保存，正在应用到 OpenClaw…"
-                scope.launch {
-                    val result = runCatching { OpenClawProcessManager.get(context).start() }
-                    result.onSuccess {
-                        failed = !it.started
-                        notice = if (it.started) "$section 已保存并生效。" else "$section 已保存；OpenClaw 尚未就绪：${it.message}"
-                    }.onFailure {
-                        if (it is kotlinx.coroutines.CancellationException) throw it
-                        failed = true
-                        notice = "$section 已保存；应用失败，请检查 Gateway 状态。"
-                    }
-                    if (latestConfig != snapshot) notice += " 有新的修改，请再次保存。"
-                    busy = false
-                }
-            } else {
-                notice = "$section 已保存并生效。"
-            }
-        }, enabled = !busy, modifier = Modifier.jarvisPressScale()) {
-            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(if (busy) "应用中…" else "保存并生效")
-        }
-        if (notice.isNotBlank()) {
-            Text(notice, color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
-        }
-    }
-}
 
-@Composable
-private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, modifier = Modifier.jarvisPressScale())
-    }
-}
-
-@Composable
-private fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String) {
-    Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-        ThemeIllustration(title, subtitle,
-            compact = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE)
-        Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(10.dp))
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
 
 @Composable
 private fun RootWarningDialog(onCancel: () -> Unit, onConfirm: () -> Unit) {

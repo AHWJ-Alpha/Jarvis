@@ -1,0 +1,11 @@
+{
+  "seed": 271424,
+  "prompt": "masterpiece, best quality, anime film illustration, Japanese animation background painting, anime key visual, cel-shaded brushwork, precise delicate linework, rich hand-painted lighting, soft cinematic atmosphere, 2d anime art, one adult woman in her late twenties, mature adult character design, narrow jaw and adult face proportions, small head relative to shoulders, fully clothed in opaque fabric that covers the shoulders and chest, tasteful provocative mood without exposure, vertical anime scene illustration for a phone UI empty state, the character seen together with her place, calm nearly empty background band across the top of the canvas, the subject sits in the lower two thirds, soft depth of field, no text, the same adult woman standing on a stone bridge in ink wash, one sleeve lifted to her chin, mist and a faint mountain ridge behind her, a pale moon, sparse dry brush strokes on rice paper",
+  "negative_prompt": "text, letters, logo, watermark, signature, ui, interface, split screen, collage, border, frame, low quality, blurry, bad anatomy, extra limbs, duplicate person, photorealistic, 3d render, photograph, abstract shapes, faceless, cluttered left side, nude, nudity, nsfw, explicit, topless, nipples, areola, exposed breasts, exposed chest, see-through fabric, transparent clothing, wet see-through shirt, lingerie only, exposed underwear, panties visible, cameltoe, crotch focus, spread legs, sexual pose, sexual act, suggestive object close-up, torn clothes, ripped uniform, clothes pulled open, bare shoulders, off-shoulder clothing, deep neckline, plunging neckline, bare chest, childlike face, oversized head, big round eyes, cute baby face, small chin, child, loli, underage, minor, teen body, kid, small child, toddler proportions, baby face, chibi",
+  "gen_size": [
+    768,
+    1024
+  ],
+  "content_rating": "suggestive-non-explicit",
+  "character": "the same adult woman standing on a stone bridge in ink wash, one sleeve lifted to her chin, mist and a faint mountain ridge behind her, a pale moon, sparse dry brush strokes on rice paper"
+}

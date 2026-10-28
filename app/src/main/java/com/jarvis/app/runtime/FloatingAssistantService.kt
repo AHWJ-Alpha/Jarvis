@@ -7,11 +7,17 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Outline
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -20,10 +26,12 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -39,7 +47,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
-import com.jarvis.app.JarvisTheme
 import kotlin.math.abs
 
 /** A small system overlay for voice tasks, quick chat and accessibility progress. */
@@ -52,17 +59,33 @@ class FloatingAssistantService : Service() {
     private var expanded = false
     private var appearance = FloatingAssistantPreferences()
     private var bubbleView: ImageView? = null
+    /** 气泡下方的 1dp 圆形描边环（取代 elevation 的方形阴影）。 */
+    private var bubbleRingView: View? = null
+    private var errorBadge: TextView? = null
+    private var errorText: String? = null
+    private var acknowledgedResult = ""
     private var compactProgress: TextView? = null
     private var compactForTask = false
     private var hiddenUntil = 0L
     private var pendingVoiceText: String? = null
     private var pendingVoiceSubmit: Runnable? = null
     private val bubbleGesture = BubbleGestureInterpreter()
-    private val panelBackground by lazy { rounded(0xff172438.toInt(), 24) }
+    private var themeColors: FloatingThemeColors? = null
+    private var panelBackground: GradientDrawable? = null
     private var taskRunning = false
+    /** 折叠态气泡的窗口 y（屏幕坐标）；-1 表示尚未定位。 */
+    private var bubbleY = -1
+    /** 用户手动拖动过气泡：此时位置优先于默认停靠点（P1 修复：只在没拖过时回默认位）。 */
+    private var bubbleMoved = false
+    /** 当前软键盘高度（px），用于把气泡挡在键盘上沿之上；0 表示无键盘。 */
+    private var imeHeight = 0
     @Volatile private var submittedTask: String? = null
     private val history = mutableListOf<Pair<Boolean, String>>()
 
+    private var headerRow: LinearLayout? = null
+    private var titleText: TextView? = null
+    private var returnLabel: TextView? = null
+    private val themedButtons = mutableListOf<Button>()
     private var statusText: TextView? = null
     private var resultText: TextView? = null
     private var progressText: TextView? = null
@@ -75,12 +98,30 @@ class FloatingAssistantService : Service() {
 
     private val observer: (FloatingAssistantSnapshot) -> Unit = { state -> mainHandler.post { render(state) } }
 
+    /**
+     * 主题切换的唯一可靠触发点：设置页只写 jarvis_config/theme_id，浮窗可能长时间收不到任何
+     * 快照事件，只靠 render() 首行的 syncTheme() 会把旧头像/旧配色一直挂着。这里直接监听该键。
+     */
+    private val themePrefs by lazy {
+        applicationContext.getSharedPreferences(CONFIG_PREFS, Context.MODE_PRIVATE)
+    }
+    private val themeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // theme_id（换主题）与 mode_override（换明暗）任一变化都要重上色：只切明暗时 themeId 不变，
+        // 靠 themeId 比较会漏掉，所以两个键走同一条重绘路径，判断交给 syncTheme 里的 (id, mode) 比较。
+        if (key != KEY_THEME_ID && key != KEY_MODE_OVERRIDE) return@OnSharedPreferenceChangeListener
+        mainHandler.post {
+            if (syncTheme()) applyBubblePosition(force = true)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         appearance = FloatingAssistantPreferences.load(this)
+        restoreBubblePosition()
         loadHistory()
         startForeground(NOTIFICATION_ID, buildNotification())
+        themePrefs.registerOnSharedPreferenceChangeListener(themeListener)
         FloatingAssistantController.observe(observer)
         if (Settings.canDrawOverlays(this)) attachWindow() else {
             FloatingAssistantController.reportLaunchFailure("悬浮窗权限未开启")
@@ -122,6 +163,7 @@ class FloatingAssistantService : Service() {
     }
 
     override fun onDestroy() {
+        themePrefs.unregisterOnSharedPreferenceChangeListener(themeListener)
         FloatingAssistantController.removeObserver(observer)
         pendingVoiceSubmit?.let(mainHandler::removeCallbacks)
         removeWindow()
@@ -130,6 +172,17 @@ class FloatingAssistantService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /** 旋转/分辨率变化后屏幕高度变了，安全区间要重算；拖过的位置保留（只做 clamp，不回默认位）。 */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        imeHeight = 0
+        mainHandler.post {
+            // follow 模式下系统切深浅色不会写 prefs，只能靠配置变化触发重算。
+            syncTheme()
+            applyBubblePosition(force = true)
+        }
+    }
 
     private fun attachWindow() {
         if (content != null) return
@@ -142,7 +195,7 @@ class FloatingAssistantService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.END
             x = dp(12)
-            y = dp(240)
+            y = if (bubbleY >= 0) bubbleY else defaultBubbleY()
         }
         runCatching {
             windowManager.addView(view, overlayParams)
@@ -156,52 +209,72 @@ class FloatingAssistantService : Service() {
     }
 
     private fun buildWindow(): View {
+        themedButtons.clear()
+        val colors = colors()
+        // 不用 elevation：overlay 窗口的 elevation 阴影按矩形 wrap 投影，圆角面板会带方框影。
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(0xff172438.toInt(), 24)
-            elevation = dp(12).toFloat()
+            background = panelDrawable(colors)
             clipToOutline = true
         }
+        // 软键盘弹出/收起时重新算一次气泡停靠点（部分机型不给 overlay 窗口派发 IME insets，此时退化为 render 时 clamp）。
+        root.setOnApplyWindowInsetsListener { view, insets ->
+            val keyboard = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                insets.getInsets(WindowInsets.Type.ime()).bottom
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetBottom
+            }
+            if (keyboard != imeHeight) {
+                imeHeight = keyboard
+                android.util.Log.i("JarvisFloating", "ime=" + keyboard + " range=" + bubbleRange() + " userY=" + bubbleY)
+                applyBubblePosition(force = true)
+            }
+            view.onApplyWindowInsets(insets)
+        }
+        panelBackground = root.background as? GradientDrawable
         compactProgress = TextView(this).apply {
             text = "Jarvis 正在操作…"
             textSize = 12f
-            setTextColor(0xffeff6ff.toInt())
+            setTextColor(colors.title)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
-            background = rounded(0xff223650.toInt(), 12)
+            background = rounded(colors.header, 12)
             visibility = View.GONE
         }
         root.addView(compactProgress, LinearLayout.LayoutParams(-1, dp(32)))
         val header = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(8), dp(8), dp(8))
-            background = rounded(0xff223650.toInt(), 0)
+            background = rounded(colors.header, 0)
         }
+        headerRow = header
         val title = TextView(this).apply {
             text = "JARVIS  ·  随身助手"
-            setTextColor(0xffeff6ff.toInt())
+            setTextColor(colors.title)
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
         }
+        titleText = title
         val collapse = button("−") { collapse() }.apply { minWidth = dp(38); minHeight = dp(36) }
         header.addView(title, LinearLayout.LayoutParams(0, dp(42), 1f))
         header.addView(collapse)
         root.addView(header)
 
         statusText = TextView(this).apply {
-            setTextColor(0xffb8c9dd.toInt()); textSize = 12f
+            setTextColor(colors.body); textSize = 12f
             setPadding(dp(14), dp(8), dp(14), dp(3))
         }
         root.addView(statusText)
         progressText = TextView(this).apply {
-            setTextColor(0xff8de3cf.toInt()); textSize = 12f
+            setTextColor(colors.accent); textSize = 12f
             setPadding(dp(14), dp(2), dp(14), dp(6))
         }
         root.addView(progressText)
 
         val scroll = ScrollView(this).apply { isFillViewport = false }
         resultText = TextView(this).apply {
-            setTextColor(0xffeff6ff.toInt()); textSize = 13f
+            setTextColor(colors.title); textSize = 13f
             setPadding(dp(14), dp(7), dp(14), dp(10))
             text = "语音说任务，或在下方输入问题。需要控制手机时会显示操作进度。"
         }
@@ -211,13 +284,14 @@ class FloatingAssistantService : Service() {
         returnRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(7), dp(12), dp(7))
-            background = rounded(0xff263c52.toInt(), 12)
+            background = rounded(colors.notice, 12)
             visibility = View.GONE
         }
-        returnRow?.addView(TextView(this).apply {
+        returnLabel = TextView(this).apply {
             text = "Jarvis 已完成屏幕操作。要切回原应用吗？"
-            setTextColor(0xffeff6ff.toInt()); textSize = 12f
-        })
+            setTextColor(colors.title); textSize = 12f
+        }
+        returnRow?.addView(returnLabel)
         val returnActions = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         returnButton = button("切回原应用") { returnToPreviousApp() }
         returnActions.addView(button("留在当前界面") { FloatingAssistantController.dismissReturnChoice() })
@@ -231,13 +305,13 @@ class FloatingAssistantService : Service() {
         }
         inputText = EditText(this).apply {
             hint = "输入要做的事…"
-            setTextColor(0xffeff6ff.toInt())
-            setHintTextColor(0xff91a6be.toInt())
+            setTextColor(colors.title)
+            setHintTextColor(colors.muted)
             textSize = 13f
             minLines = 1
             maxLines = 2
             imeOptions = EditorInfo.IME_ACTION_SEND
-            background = rounded(0xff26364c.toInt(), 14)
+            background = rounded(colors.field, 14, colors.bubbleRing)
             setPadding(dp(10), dp(7), dp(10), dp(7))
             setOnEditorActionListener { _, action, _ ->
                 if (action == EditorInfo.IME_ACTION_SEND) { submitPrompt(); true } else false
@@ -256,14 +330,31 @@ class FloatingAssistantService : Service() {
 
         val bubble = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            elevation = dp(10).toFloat()
             contentDescription = "Jarvis 悬浮助手。单点打开，长按语音输入"
         }
         bubbleView = bubble
         styleBubble(bubble)
         bubble.setOnTouchListener(makeDragListener(bubble))
-        root.tag = bubble
-        root.addView(bubble, LinearLayout.LayoutParams(dp(appearance.sizeDp), dp(appearance.sizeDp)))
+        // 角标要叠在头像上，所以头像外面包一层同尺寸 FrameLayout；窗口折叠时尺寸与此容器一致，不会裁切。
+        val wrap = FrameLayout(this).apply { clipChildren = false }
+        // 气泡自身不再用 elevation（圆球会带方框阴影）；改成垫在图下方的圆形描边环，只露出外缘 1dp。
+        val ring = View(this).apply { background = bubbleRingDrawable(colors) }
+        bubbleRingView = ring
+        wrap.addView(ring, FrameLayout.LayoutParams(dp(appearance.sizeDp), dp(appearance.sizeDp)))
+        wrap.addView(bubble, FrameLayout.LayoutParams(dp(appearance.sizeDp), dp(appearance.sizeDp)))
+        errorBadge = TextView(this).apply {
+            text = "!"
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(colors.onError)
+            background = rounded(colors.error, 9, colors.panel)
+            contentDescription = "出错了，点开悬浮球查看详情"
+            visibility = View.GONE
+        }
+        wrap.addView(errorBadge, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.TOP or Gravity.END))
+        root.tag = wrap
+        root.addView(wrap, LinearLayout.LayoutParams(dp(appearance.sizeDp), dp(appearance.sizeDp)))
         root.visibility = View.VISIBLE
         return root
     }
@@ -289,6 +380,7 @@ class FloatingAssistantService : Service() {
                     downX = event.rawX; downY = event.rawY
                     originX = window.x; originY = window.y; moved = false; longPressed = false
                     mainHandler.postDelayed(longPress, 500)
+                    pressDown(view)
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -300,13 +392,18 @@ class FloatingAssistantService : Service() {
                     }
                     if (moved) {
                         window.x = (originX - dx).coerceAtLeast(0)
-                        window.y = (originY + dy).coerceAtLeast(dp(24))
+                        // 全屏自由拖动，只做系统栏之间的边界 clamp（不再限制 0.45H~0.72H）。
+                        window.y = clampBubbleY(originY + dy)
+                        bubbleY = window.y
+                        bubbleMoved = true
                         runCatching { windowManager.updateViewLayout(content, window) }
                     }
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
                     mainHandler.removeCallbacks(longPress)
+                    pressUp(view)
+                    if (moved) persistBubblePosition(bubbleY)
                     if (!moved && !longPressed) {
                         if (pendingVoiceText != null) editPendingVoice()
                         else bubbleGesture.tap(System.currentTimeMillis(), mainHandler) { count ->
@@ -319,7 +416,12 @@ class FloatingAssistantService : Service() {
                     }
                     return true
                 }
-                MotionEvent.ACTION_CANCEL -> { mainHandler.removeCallbacks(longPress); return true }
+                MotionEvent.ACTION_CANCEL -> {
+                    mainHandler.removeCallbacks(longPress)
+                    pressUp(view)
+                    if (moved) persistBubblePosition(bubbleY)
+                    return true
+                }
             }
             return false
         }
@@ -331,6 +433,9 @@ class FloatingAssistantService : Service() {
         compactForTask = false
         root.visibility = View.VISIBLE
         expanded = true
+        acknowledgedResult = FloatingAssistantController.snapshot.result
+        clearError()
+        panelBackground = panelBackground ?: panelDrawable(colors())
         root.background = panelBackground
         root.clipToOutline = true
         for (index in 0 until root.childCount) {
@@ -366,11 +471,14 @@ class FloatingAssistantService : Service() {
         window.height = dp(appearance.sizeDp)
         window.gravity = Gravity.TOP or Gravity.END
         window.x = dp(12)
-        window.y = dp(240)
+        bubbleY = clampBubbleY(if (bubbleY >= 0) bubbleY else defaultBubbleY())
+        window.y = bubbleY
         window.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         window.alpha = 1f
         inputText?.clearFocus()
         runCatching { windowManager.updateViewLayout(root, window) }
+        // 键盘还开着时先让开输入区；键盘收起后这次调用会把气泡放回用户位置。
+        applyBubblePosition(force = true)
     }
 
     private fun compactProgress(state: FloatingAssistantSnapshot) {
@@ -404,9 +512,7 @@ class FloatingAssistantService : Service() {
     }
 
     private fun styleBubble(bubble: ImageView) {
-        val themeIndex = getSharedPreferences("jarvis_config", Context.MODE_PRIVATE).getInt("theme", 0)
-        val theme = JarvisTheme.entries.getOrElse(themeIndex) { JarvisTheme.Deep }
-        bubble.setImageResource(theme.avatar)
+        bubble.setImageResource(colors().avatarRes)
         val radius = when (appearance.shape) {
             FloatingShape.Circle -> appearance.sizeDp / 2f
             FloatingShape.Rounded -> appearance.sizeDp * .28f
@@ -419,16 +525,227 @@ class FloatingAssistantService : Service() {
         }
         bubble.clipToOutline = true
         bubble.invalidateOutline()
+        bubbleRingView?.let { ring ->
+            ring.background = bubbleRingDrawable(colors())
+            ring.invalidate()
+        }
     }
+
+    private fun colors(): FloatingThemeColors =
+        themeColors ?: FloatingThemePalette.read(this).also { themeColors = it }
+
+    /**
+     * 主题可能在设置页被切走（装配代理写 jarvis_config/theme_id）。每次 render 重读一次缓存里的
+     * SharedPreferences，themeId 变了就整套重上色，没变 immediate 返回。
+     */
+    private fun syncTheme(): Boolean {
+        val next = FloatingThemePalette.read(this)
+        if (next.themeId == themeColors?.themeId && next.mode == themeColors?.mode && panelBackground != null) return false
+        themeColors = next
+        applyTheme(next)
+        return true
+    }
+
+    private fun applyTheme(colors: FloatingThemeColors) {
+        panelBackground = panelDrawable(colors)
+        applyPanelBackground()
+        headerRow?.background = rounded(colors.header, 0)
+        titleText?.setTextColor(colors.title)
+        statusText?.setTextColor(colors.body)
+        resultText?.setTextColor(colors.title)
+        progressText?.setTextColor(colors.accent)
+        compactProgress?.apply {
+            setTextColor(colors.title)
+            background = rounded(colors.header, 12)
+        }
+        returnRow?.background = rounded(colors.notice, 12)
+        returnLabel?.setTextColor(colors.title)
+        inputText?.apply {
+            setTextColor(colors.title)
+            setHintTextColor(colors.muted)
+            background = rounded(colors.field, 14, colors.bubbleRing)
+        }
+        themedButtons.forEach { restyleButton(it, colors) }
+        errorBadge?.apply {
+            setTextColor(colors.onError)
+            background = rounded(colors.error, 9, colors.panel)
+        }
+        bubbleView?.let { styleBubble(it) }
+    }
+
+    /** 只有展开态才让面板底色可见；折叠/进度态下 root 必须是透明的（否则会挡住下面应用）。 */
+    private fun applyPanelBackground() {
+        val root = content as? LinearLayout ?: return
+        if (!expanded) return
+        root.background = panelBackground
+        root.clipToOutline = true
+    }
+
+    private fun restyleButton(button: Button, colors: FloatingThemeColors) {
+        button.setTextColor(colors.title)
+        button.background = pressable(colors.buttonFill, 12, colors.ripple)
+    }
+
+    private fun pressDown(view: View) {
+        view.animate().scaleX(0.94f).scaleY(0.94f).setDuration(120).start()
+    }
+
+    private fun pressUp(view: View) {
+        view.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+    }
+
+    private fun markError(message: String) {
+        if (message == errorText) return
+        errorText = message
+        errorBadge?.visibility = View.VISIBLE
+        errorBadge?.contentDescription = "出错：${message.take(40)}。点开悬浮球查看详情"
+    }
+
+    private fun clearError() {
+        if (errorText == null && errorBadge?.visibility == View.GONE) return
+        errorText = null
+        errorBadge?.visibility = View.GONE
+        errorBadge?.contentDescription = "出错了，点开悬浮球查看详情"
+    }
+
+    /** 折叠态才看得见气泡；错误文案只能落在角标上。 */
+    private fun updateErrorBadge(state: FloatingAssistantSnapshot) {
+        if (state.busy || state.result.isBlank()) return
+        if (looksLikeError(state.result)) {
+            if (state.result != acknowledgedResult) markError(state.result)
+        } else if (errorText != null) {
+            acknowledgedResult = state.result
+            clearError()
+        }
+    }
+
+    private fun looksLikeError(value: String): Boolean = ERROR_HINTS.any { value.contains(it) }
 
     private fun refreshAppearance() {
         appearance = FloatingAssistantPreferences.load(this)
-        bubbleView?.let { bubble ->
-            val size = dp(appearance.sizeDp)
-            bubble.layoutParams = (bubble.layoutParams as LinearLayout.LayoutParams).apply { width = size; height = size }
-            styleBubble(bubble)
-        }
+        if (applyBubbleSize() != null) bubbleView?.let { styleBubble(it) }
         if (!expanded) collapse()
+    }
+
+    /**
+     * 折叠态的气泡层级是 root(LinearLayout) → wrap(FrameLayout) → bubble(ImageView) + errorBadge。
+     * 尺寸必须两层一起改，且各自按父容器的 LayoutParams 类型取参数——气泡的 lp 是 FrameLayout 的，
+     * 拿它去强转 LinearLayout.LayoutParams 会抛 ClassCastException 直接打死进程。
+     * @return 尺寸更新后的气泡；气泡尚未创建时返回 null。
+     */
+    private fun applyBubbleSize(): ImageView? {
+        val bubble = bubbleView ?: return null
+        val size = dp(appearance.sizeDp)
+        val wrap = bubble.parent as? View
+        if (wrap != null) {
+            val wrapLp = wrap.layoutParams as? LinearLayout.LayoutParams
+                ?: LinearLayout.LayoutParams(size, size)
+            wrapLp.width = size
+            wrapLp.height = size
+            wrap.layoutParams = wrapLp
+        }
+        val bubbleLp = bubble.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(size, size)
+        bubbleLp.width = size
+        bubbleLp.height = size
+        bubble.layoutParams = bubbleLp
+        return bubble
+    }
+
+    private fun screenHeightPx(): Int = resources.displayMetrics.heightPixels
+
+    /**
+     * 气泡可移动区间 = [statusBar 下沿, 导航栏上沿]，即系统栏之间的内容区（全屏自由拖动）。
+     * overlay 窗口不带 FLAG_LAYOUT_IN_SCREEN，y 原点就是内容区顶（statusBar 下沿），
+     * 所以区间下界为 0、上界为「内容区高 - 气泡高」；insets 取不到时退化为整屏高。
+     */
+    private fun contentAreaHeight(): Int {
+        val screen = screenHeightPx()
+        val available = screen - statusBarOffset() - navigationBarHeight()
+        return available.coerceAtLeast(dp(120))
+    }
+
+    /**
+     * overlay 窗口的 y 原点就是 statusBar 下沿（系统把窗口 fit 在系统栏之间），所以顶偏移要按
+     * 「视图实际落点 - params.y」反推：rootWindowInsets 对 overlay 窗口报 0（insets 已被父 frame 吃掉）。
+     */
+    private fun statusBarOffset(): Int {
+        val root = content ?: return 0
+        val window = params ?: return 0
+        return runCatching {
+            val loc = IntArray(2)
+            root.getLocationOnScreen(loc)
+            (loc[1] - window.y).coerceIn(0, dp(160))
+        }.getOrDefault(0)
+    }
+
+    /** 导航栏高度：insets 报了真实值就用它，否则读系统维度资源（overlay 上 insets 常为 0）。 */
+    private fun navigationBarHeight(): Int {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bottom = runCatching {
+                content?.rootWindowInsets?.getInsets(WindowInsets.Type.navigationBars())?.bottom ?: 0
+            }.getOrDefault(0)
+            if (bottom > 0) return bottom
+        }
+        return runCatching {
+            val id = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+            if (id > 0) resources.getDimensionPixelSize(id) else 0
+        }.getOrDefault(0)
+    }
+
+    private fun bubbleRange(): IntRange {
+        val size = dp(appearance.sizeDp)
+        return 0..(contentAreaHeight() - size).coerceAtLeast(0)
+    }
+
+    /** 默认停靠点：内容区 62% 处（气泡垂直居中于该点）。只在用户没拖过时使用。 */
+    private fun defaultBubbleY(): Int {
+        val height = contentAreaHeight()
+        val size = dp(appearance.sizeDp)
+        return ((height * DEFAULT_DOCK_RATIO).toInt() - size / 2).coerceIn(bubbleRange())
+    }
+
+    private fun clampBubbleY(value: Int): Int = value.coerceIn(bubbleRange())
+
+    /**
+     * 键盘弹出时给气泡挑一侧让位：键盘上沿之上 或 屏幕顶侧，取离用户位置更近的一侧。
+     * 只改窗口的临时 y，不写回 bubbleY —— 键盘收起后气泡回到用户原来的位置。
+     */
+    private fun imeAvoidY(desired: Int): Int {
+        val keyboard = imeHeight
+        val height = contentAreaHeight()
+        if (keyboard <= 0 || keyboard >= height) return desired
+        val size = dp(appearance.sizeDp)
+        val aboveKeyboard = (height - keyboard - size - dp(8)).coerceIn(bubbleRange())
+        val topSide = bubbleRange().first
+        return if (abs(desired - aboveKeyboard) <= abs(desired - topSide)) aboveKeyboard else topSide
+    }
+
+    private fun restoreBubblePosition() {
+        val prefs = getSharedPreferences(POSITION_PREFS, Context.MODE_PRIVATE)
+        bubbleMoved = prefs.getBoolean(KEY_BUBBLE_MOVED, false)
+        val saved = prefs.getInt(KEY_BUBBLE_Y, -1)
+        bubbleY = if (bubbleMoved && saved >= 0) clampBubbleY(saved) else defaultBubbleY()
+    }
+
+    private fun persistBubblePosition(y: Int) {
+        getSharedPreferences(POSITION_PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_BUBBLE_MOVED, true)
+            .putInt(KEY_BUBBLE_Y, y)
+            .apply()
+    }
+
+    /** 折叠态下把气泡放到 [用户位置 › 键盘避让] 算出的窗口 y；展开/进度态不管（窗口尺寸另有语义）。 */
+    private fun applyBubblePosition(force: Boolean = false) {
+        if (expanded || compactForTask) return
+        val window = params ?: return
+        val root = content ?: return
+        bubbleY = clampBubbleY(if (bubbleY >= 0) bubbleY else defaultBubbleY())
+        val next = imeAvoidY(bubbleY)
+        if (force) android.util.Log.i("JarvisFloating", "bubble y=" + next + " user=" + bubbleY + " range=" + bubbleRange() + " ime=" + imeHeight)
+        if (!force && window.y == next) return
+        window.y = next
+        runCatching { windowManager.updateViewLayout(root, window) }
     }
 
     private fun performGesture(action: FloatingGestureAction, task: String) {
@@ -485,24 +802,29 @@ class FloatingAssistantService : Service() {
     private fun submitPrompt() {
         if (taskRunning) {
             statusText?.text = "上一条消息仍在执行，请稍后再发送。"
+            markError("上一条消息仍在执行")
             return
         }
         val prompt = inputText?.text?.toString()?.trim().orEmpty()
         if (prompt.isBlank()) {
             statusText?.text = "请输入消息后再发送。"
+            markError("请输入消息后再发送")
             return
         }
         if (prompt.length > 4000) {
             statusText?.text = "任务太长，请控制在 4000 字以内。"
+            markError("任务太长，未发送")
             return
         }
         if (FloatingAssistantController.snapshot.busy) {
             statusText?.text = "正在执行其他任务，请稍后再发送。"
+            markError("正在执行其他任务")
             return
         }
         inputText?.setText("")
         hideKeyboard()
         inputText?.clearFocus()
+        clearError()
         taskRunning = true
         android.util.Log.i("JarvisFloating", "small-window message accepted (${prompt.length} chars)")
         voiceButton?.isEnabled = false
@@ -577,6 +899,11 @@ class FloatingAssistantService : Service() {
     }
 
     private fun render(state: FloatingAssistantSnapshot) {
+        syncTheme()
+        // 主题切换/重组也会走 render：只有用户没拖过才回默认位，拖过的仅做区间 clamp，位置不回弹。
+        if (!bubbleMoved) bubbleY = defaultBubbleY()
+        applyBubblePosition()
+        updateErrorBadge(state)
         if (state.busy && (state.hadAccessibilityOperation || state.operation.startsWith("accessibility.") || state.operation == "app.launch")) {
             compactProgress(state)
             return
@@ -696,19 +1023,45 @@ class FloatingAssistantService : Service() {
     }
 
     private fun button(text: String, action: () -> Unit) = Button(this).apply {
+        val colors = colors()
         this.text = text
         isAllCaps = false
         textSize = 11f
-        setTextColor(0xffeaf2fc.toInt())
-        background = rounded(0xff354c67.toInt(), 12)
+        setTextColor(colors.title)
+        background = pressable(colors.buttonFill, 12, colors.ripple)
         setPadding(dp(4), 0, dp(4), 0)
+        themedButtons += this
         setOnClickListener { action() }
     }
 
-    private fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply {
+    /** 面板：1dp 描边代替 elevation 方影；折叠/进度态 root 会被换成透明 drawable，这里只管展开态。 */
+    private fun panelDrawable(colors: FloatingThemeColors): GradientDrawable =
+        rounded(colors.panel, 24, colors.bubbleRing)
+
+    /** 气泡描边环：与气泡同尺寸、跟随 shape，垫在圆形裁切的头像下面，只露出外缘约 1dp。 */
+    private fun bubbleRingDrawable(colors: FloatingThemeColors): GradientDrawable = GradientDrawable().apply {
+        when (appearance.shape) {
+            FloatingShape.Circle -> shape = GradientDrawable.OVAL
+            FloatingShape.Rounded -> cornerRadius = dp((appearance.sizeDp * .28f).toInt()).toFloat()
+            FloatingShape.Square -> cornerRadius = dp(5).toFloat()
+        }
+        setColor(0x00000000)
+        setStroke(dp(2), colors.bubbleRing)
+    }
+
+    private fun rounded(color: Int, radiusDp: Int, strokeColor: Int? = null) = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radiusDp).toFloat()
+        if (strokeColor != null) setStroke(dp(1), strokeColor)
     }
+
+    /** 圆角 + 涟漪：RippleDrawable 的 mask 与内容同圆角，涟漪不会溢出到圆角外的直角区域。 */
+    private fun pressable(fill: Int, radiusDp: Int, ripple: Int, strokeColor: Int? = null): Drawable =
+        RippleDrawable(
+            ColorStateList.valueOf(ripple),
+            rounded(fill, radiusDp, strokeColor),
+            rounded(0xffffffff.toInt(), radiusDp)
+        )
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
@@ -759,7 +1112,18 @@ class FloatingAssistantService : Service() {
         private const val CHANNEL = "jarvis_floating"
         private const val NOTIFICATION_ID = 18792
         private const val PREFS = "jarvis_floating_chat"
+        /** 主界面装配层写主题的 prefs 名与键（与 FloatingThemePalette 保持一致）。 */
+        private const val CONFIG_PREFS = "jarvis_config"
+        private const val KEY_THEME_ID = "theme_id"
+        private const val KEY_MODE_OVERRIDE = "mode_override"
         private const val KEY_HISTORY = "messages"
+        /** 气泡停靠位置单独存，避免被设置页保存外观时覆盖。 */
+        private const val POSITION_PREFS = "jarvis_floating_position"
+        private const val KEY_BUBBLE_MOVED = "bubbleMoved"
+        private const val KEY_BUBBLE_Y = "bubbleY"
+        private const val DEFAULT_DOCK_RATIO = 0.62f
+        /** 快照没有 error 位（FloatingAssistantController 不在本阶段改动范围内），只能按文案判定失败。 */
+        private val ERROR_HINTS = listOf("失败", "错误", "无法", "未开启", "未找到", "超时", "拒绝", "异常", "请先", "error", "failed")
 
         fun show(context: Context) = start(context, ACTION_SHOW)
         fun refresh(context: Context) = start(context, ACTION_REFRESH)
