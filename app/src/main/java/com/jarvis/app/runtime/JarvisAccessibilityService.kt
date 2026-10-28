@@ -178,7 +178,17 @@ class JarvisAccessibilityService : AccessibilityService() {
         AccessibilityController.service = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        event?.let { current ->
+            if (current.eventType in setOf(
+                    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+                    AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+                    AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                )) {
+                ForegroundAppTracker.record(current.packageName?.toString())
+            }
+        }
+    }
 
     override fun onInterrupt() = Unit
 

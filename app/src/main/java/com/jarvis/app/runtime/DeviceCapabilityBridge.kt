@@ -69,7 +69,10 @@ class DeviceCapabilityBridge(private val context: Context) {
             put("timestamp", System.currentTimeMillis())
         }.toString() + "\n")
         val before = if (request.capability.startsWith("accessibility.")) AccessibilityController.inspect() else JSONObject()
-        val result = when (request.capability) {
+        FloatingAssistantController.operationStarted(request.capability)
+        var operationSucceeded = false
+        val result = try {
+            when (request.capability) {
             "operation.memory" -> memory.execute(request.arguments, operationHost)
             "device.info" -> CapabilityResult(true, "设备信息可用", JSONObject()
                 .put("package", context.packageName).put("manufacturer", Build.MANUFACTURER)
@@ -77,6 +80,7 @@ class DeviceCapabilityBridge(private val context: Context) {
                 .put("androidVersion", Build.VERSION.RELEASE).put("sdk", Build.VERSION.SDK_INT)
                 .put("androidUserId", Process.myUid() / 100000)
                 .put("externalStorage", Environment.getExternalStorageDirectory().absolutePath))
+            "runtime.tools" -> RuntimeToolManager(context).capability(request.arguments)
             "root.exec" -> rootExec(request.arguments.optString("command"), fullRoot)
             "camera.capture" -> cameraCapture()
             "accessibility.inspect" -> accessibilityInspect()
@@ -89,7 +93,8 @@ class DeviceCapabilityBridge(private val context: Context) {
             "ocr.read" -> accessibilityOcr()
             "notification.read" -> notificationRead()
             else -> CapabilityResult(false, "未知设备能力：${request.capability}")
-        }
+            }.also { operationSucceeded = it.ok }
+        } finally { FloatingAssistantController.operationFinished(operationSucceeded) }
         if (!request.capability.startsWith("operation.")) runCatching { memory.record(request.capability, request.arguments, before, result) }
             .onFailure { android.util.Log.w("JarvisOperationMemory", "Recording unavailable", it) }
         return result
@@ -99,7 +104,7 @@ class DeviceCapabilityBridge(private val context: Context) {
         fun capabilityNames(): List<String> = listOf(
             "device.info", "camera.capture", "accessibility.inspect", "accessibility.click",
             "accessibility.input", "accessibility.global", "app.launch",
-            "ocr.read", "notification.read", "root.exec", "accessibility.perform", "accessibility.swipe", "operation.memory"
+            "ocr.read", "notification.read", "root.exec", "accessibility.perform", "accessibility.swipe", "operation.memory", "runtime.tools"
         )
     }
 

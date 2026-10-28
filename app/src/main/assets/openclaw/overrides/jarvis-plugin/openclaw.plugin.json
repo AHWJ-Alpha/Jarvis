@@ -10,6 +10,7 @@
       "jarvis_accessibility_perform",
       "jarvis_accessibility_swipe",
       "jarvis_device_info",
+      "jarvis_runtime_tools",
       "jarvis_camera_capture",
       "jarvis_accessibility_inspect",
       "jarvis_accessibility_click",

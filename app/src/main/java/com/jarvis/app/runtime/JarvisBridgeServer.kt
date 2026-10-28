@@ -113,7 +113,7 @@ class JarvisBridgeServer(
             val capability = input.optString("capability")
             val risk = when (capability) {
                 "device.info", "accessibility.inspect", "ocr.read" -> CapabilityRisk.LOW
-                "root.exec", "accessibility.click" -> CapabilityRisk.HIGH
+                "root.exec", "accessibility.click", "runtime.tools" -> CapabilityRisk.HIGH
                 else -> CapabilityRisk.MEDIUM
             }
             val result = bridge.execute(

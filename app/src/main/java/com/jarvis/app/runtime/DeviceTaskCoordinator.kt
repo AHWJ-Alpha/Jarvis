@@ -12,8 +12,14 @@ object DeviceTaskCoordinator {
 
     suspend fun <T> run(label: String, block: suspend () -> T): T = mutex.withLock {
         activeLabel = label
+        FloatingAssistantController.taskStarted(label)
         try {
-            block()
+            val result = block()
+            FloatingAssistantController.taskFinished(result.toString())
+            result
+        } catch (error: Throwable) {
+            FloatingAssistantController.taskFinished("任务结束：${error.message ?: error.javaClass.simpleName}")
+            throw error
         } finally {
             activeLabel = null
         }

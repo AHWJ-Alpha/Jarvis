@@ -1,5 +1,17 @@
 # Jarvis changelog
 
+## 0.0.15
+
+- Add the DSH-style chat layout with message-level edit, undo, and branch actions.
+- Add workspace-grouped conversation navigation with collapsible groups and a landscape side rail toggle.
+- Add an in-composer reasoning depth menu (`off` through `max`).
+- Fix floating assistant chat focus and accessibility progress presentation.
+- Add an in-chat quick toolbox for voice transcription and optional development/media commands.
+- Add CMake, Clang, Ninja, Make, FFmpeg/FFprobe, Python, Git, curl, Wget, jq, OpenSSL, SQLite, tar, unzip, zip, Node.js and Rust command detection with Termux installation requests.
+- Add Chinese voice-to-text input through the Android speech recognition service; recognized text stays in the composer for review before sending.
+- Include installed tool availability and Termux launch guidance in the assistant's per-turn context.
+- Expose catalogued command execution to OpenClaw through `jarvis_runtime_tools`, with quoted arguments, current-user Termux paths, exit codes and timeouts.
+
 ## 0.0.14
 
 - Add an OpenClaw plugin manager that imports self-contained JavaScript plugin ZIPs, lists installed plugins, and supports enable, disable, and uninstall with Gateway reloads.
