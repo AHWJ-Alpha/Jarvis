@@ -33,8 +33,16 @@ class OpenClawProcessManager private constructor(private val context: Context) {
         val changed = runCatching { config.synchronize() }.getOrElse {
             return@withContext RuntimeLaunchResult(false, RuntimeMode.EMBEDDED, "Gateway 配置失败：${it.message}")
         }
+        // 模型回退告警（如主模型未配置）与识图注册结果随启动结果一起交给用户，避免静默降级。
+        val warning = config.lastWarning?.takeIf { it.isNotBlank() }
+        val visionNote = if (config.visionRegistered) {
+            "识图模型已注册（" + config.visionRegistration.name.lowercase() + "）"
+        } else {
+            null
+        }
+        fun notice(base: String): String = listOfNotNull(base, warning, visionNote).joinToString("；")
         if (process?.isAlive == true && !changed && healthy()) {
-            return@withContext RuntimeLaunchResult(true, RuntimeMode.EMBEDDED, "OpenClaw Gateway 已就绪")
+            return@withContext RuntimeLaunchResult(true, RuntimeMode.EMBEDDED, notice("OpenClaw Gateway 已就绪"))
         }
         stopProcess()
         logs.mkdirs()
@@ -70,14 +78,14 @@ class OpenClawProcessManager private constructor(private val context: Context) {
         }
         process = launched
         repeat(90) {
-            if (healthy()) return@withContext RuntimeLaunchResult(true, RuntimeMode.EMBEDDED, "OpenClaw Gateway 已就绪")
+            if (healthy()) return@withContext RuntimeLaunchResult(true, RuntimeMode.EMBEDDED, notice("OpenClaw Gateway 已就绪"))
             if (!launched.isAlive) {
                 process = null
-                return@withContext RuntimeLaunchResult(false, RuntimeMode.EMBEDDED, "Gateway 已退出，请查看 ${log.name}")
+                return@withContext RuntimeLaunchResult(false, RuntimeMode.EMBEDDED, notice("Gateway 已退出，请查看 ${log.name}"))
             }
             Thread.sleep(1000)
         }
-        RuntimeLaunchResult(false, RuntimeMode.EMBEDDED, "Gateway 启动超时，请查看 ${log.name}")
+        RuntimeLaunchResult(false, RuntimeMode.EMBEDDED, notice("Gateway 启动超时，请查看 ${log.name}"))
     } }
 
     suspend fun stop(): Boolean = mutex.withLock { withContext(Dispatchers.IO) {

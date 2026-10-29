@@ -31,11 +31,13 @@ class AutomationWorker(context: Context, parameters: WorkerParameters) : Corouti
             manager.record(event, "已取消：自动化在后台任务开始前被暂停")
             return Result.success()
         }
-        val result = runCatching {
-            DeviceTaskCoordinator.run("自动化：${rule.title}") { AutomationAgent(applicationContext).run(event) }
+        val owner = ownerKey(rule.id)
+        val outcome = runCatching {
+            DeviceTaskCoordinator.run("自动化：${rule.title}", owner) { AutomationAgent(applicationContext).run(event) }
         }
             .getOrElse { "未完成：${it.message ?: it.javaClass.simpleName}" }
-        manager.record(event, result)
+        // 会话被删除时这条后台任务会先被取消：结果如实写成取消，不留悬空运行态。
+        manager.record(event, DeviceTaskCoordinator.cancelledReasonFor(owner) ?: outcome)
         return Result.success()
     }
 
@@ -48,6 +50,16 @@ class AutomationWorker(context: Context, parameters: WorkerParameters) : Corouti
         private const val KEY_NOTIFICATION_KEY = "notificationKey"
         private const val KEY_OPENED = "notificationOpened"
         private const val WORK_NAME = "jarvis-automation-events"
+
+        /** 任务归属键：删除会话时按规则取消已排队或在跑的后台任务。 */
+        fun ownerKey(ruleId: String): String = "automation:$ruleId"
+
+        private fun tag(ruleId: String): String = "jarvis-automation-$ruleId"
+
+        /** 撤掉该规则已排队但还没开始的后台任务（删除会话、暂停规则时调用）。 */
+        fun cancel(context: Context, ruleId: String) {
+            WorkManager.getInstance(context.applicationContext).cancelAllWorkByTag(tag(ruleId))
+        }
 
         fun enqueue(context: Context, event: AutomationEvent) {
             val data: Data = workDataOf(
@@ -62,7 +74,7 @@ class AutomationWorker(context: Context, parameters: WorkerParameters) : Corouti
             val request = OneTimeWorkRequestBuilder<AutomationWorker>()
                 .setInputData(data)
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .addTag("jarvis-automation-${event.rule.id}")
+                .addTag(tag(event.rule.id))
                 .build()
             WorkManager.getInstance(context.applicationContext)
                 .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)

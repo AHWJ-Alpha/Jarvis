@@ -51,9 +51,9 @@ import com.jarvis.ui.tokens.JarvisSize
 import com.jarvis.ui.tokens.JarvisSpacing
 
 /**
- * 行高下限取 [JarvisSize.rowMinHeight]（52dp）：上/下栏收敛到 52dp 后，行高跟着同一档收，
- * 60dp 的行在 52dp 栏之间显得过重。用 heightIn 表达，系统大字号放大文本时行会自然长高而不是被裁掉；
- * 可点行的触达高度仍是 52dp，≥ [JarvisSize.minTouch]。
+ * 行高下限取 [JarvisSize.rowMinHeight]（= [JarvisSize.denseRowHeight]，48dp）：用户反馈层与层之间空隙太大，
+ * 60 -> 52 -> 48dp。用 heightIn 表达，系统大字号放大文本时行会自然长高而不是被裁掉；
+ * 可点行的触达高度仍是 48dp，≥ [JarvisSize.minTouch]（44dp）。
  */
 private val ListRowMinHeight = JarvisSize.rowMinHeight
 
@@ -87,7 +87,7 @@ fun ListRow(
     ) {
         if (leading != null) {
             leading()
-            Spacer(Modifier.width(JarvisSpacing.space4))
+            Spacer(Modifier.width(JarvisSpacing.space3))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -104,7 +104,7 @@ fun ListRow(
             }
         }
         if (trailing != null) {
-            Spacer(Modifier.width(JarvisSpacing.space4))
+            Spacer(Modifier.width(JarvisSpacing.space3))
             trailing()
         }
     }
@@ -151,7 +151,7 @@ fun SettingSwitchRow(
                 )
             }
         }
-        Spacer(Modifier.width(JarvisSpacing.space4))
+        Spacer(Modifier.width(JarvisSpacing.space3))
         Switch(
             checked = checked,
             onCheckedChange = null,
@@ -244,7 +244,7 @@ fun JarvisChipRow(
  * 空态面板：可选插画、图标、标题、副标题、操作各出现一次，整体垂直居中。
  * 传 modifier = Modifier.fillMaxWidth().weight(1f)（或 fillMaxSize）才会真的居中，否则 Column 会缩到内容高度。
  * illustration 传 R.drawable 引用；插画与图标都是装饰性的，语义由 title 承担，故 contentDescription 给 null 以免重复播报。
- * 内边距默认 [JarvisSpacing.space6]（20dp）并开成参数：空态四周留白不随卡片内边距缩放，孤立内容才不显得贴边。
+ * 内边距默认 [JarvisSpacing.space5]（16dp，原 20dp）并开成参数：空态四周留白不随卡片内边距缩放，孤立内容才不显得贴边。
  */
 @Composable
 fun EmptyStatePanel(
@@ -253,7 +253,7 @@ fun EmptyStatePanel(
     subtitle: String? = null,
     illustration: Int? = null,
     icon: ImageVector? = null,
-    contentPadding: Dp = JarvisSpacing.space6,
+    contentPadding: Dp = JarvisSpacing.space5,
     action: (@Composable () -> Unit)? = null
 ) {
     Column(

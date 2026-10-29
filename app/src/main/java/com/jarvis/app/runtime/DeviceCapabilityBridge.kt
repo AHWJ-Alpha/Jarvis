@@ -56,6 +56,8 @@ class DeviceCapabilityBridge(private val context: Context) {
     fun runOperationMemory(arguments: JSONObject): CapabilityResult = memory.execute(arguments, operationHost)
 
     fun execute(request: CapabilityRequest, approved: Boolean = false): CapabilityResult {
+        // 会话被删除后，网关侧仍在回来的工具调用必须在这里被拒绝，否则点击会继续落到屏幕上。
+        DeviceTaskCoordinator.blockedReason()?.let { return CapabilityResult(false, it) }
         if (RemoteExecutionGuard.active && !RemoteExecutionGuard.deviceControlAllowed) {
             return CapabilityResult(false, "远程设备操作尚未在手机设置中授权；本次设备能力未执行。")
         }

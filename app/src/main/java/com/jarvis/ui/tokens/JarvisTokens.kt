@@ -45,17 +45,23 @@ object JarvisSpacing {
     /** 页面左右安全边距。 */
     val pageHorizontal = 20.dp
 
-    /** 两个区块之间的呼吸距离；用户反馈「很多项目挤在一起」，从 24dp 放松到 28dp。 */
-    val sectionGap = 28.dp
+    /** 页面上下内边距：用户反馈「层与层之间空隙太大」，20 -> 16dp，仍是 4dp 倍数。 */
+    val pageVertical = 16.dp
 
-    /** 卡片内边距：卡片内留白 ≥20dp，与 [space6] 同值但语义独立（只控制卡片内容四周）。 */
-    val cardPadding = 20.dp
+    /** 两个区块之间的呼吸距离：28 -> 20dp（上一轮放松过头，层与层之间空隙太大）。 */
+    val sectionGap = 20.dp
 
-    /** 相邻卡片之间的间隔：比 [sectionGap] 紧、比 [rowGap] 松。 */
-    val cardGap = 16.dp
+    /** 卡片内边距：20 -> 16dp，与 [space5] 同值但语义独立（只控制卡片内容四周）。 */
+    val cardPadding = 16.dp
 
-    /** 同一张卡片内相邻行之间的间隔。 */
-    val rowGap = 12.dp
+    /** 内嵌卡片（[JarvisInsetCard]）内边距：16 -> 12dp，比外层卡片再紧一档。 */
+    val insetCardPadding = 12.dp
+
+    /** 相邻卡片之间的间隔：16 -> 12dp，比 [sectionGap] 紧、比 [rowGap] 松。 */
+    val cardGap = 12.dp
+
+    /** 同一张卡片内相邻行之间的间隔，也是卡片头与内容的间距：12 -> 8dp。 */
+    val rowGap = 8.dp
 }
 
 /** 圆角阶梯；[materialShapes] 把阶梯交给 Material3 组件使用。 */
@@ -149,7 +155,7 @@ object JarvisContrast {
  * 栏面与操作件尺寸收敛。
  *
  * 用户反馈「上下边框太占地方、操作按钮偏大」：顶栏/底栏 64 -> 52dp，芯片 48 -> 40dp，
- * 工具栏图标 24 -> 20dp，列表行 60 -> 52dp。[minTouch] 是硬下限，任何可点元素的可点区域
+ * 工具栏图标 24 -> 20dp，列表行 60 -> 52 -> 48dp。[minTouch] 是硬下限，任何可点元素的可点区域
  * 不得小于 44dp（芯片的 48dp 触达仍由 Material3 的最小交互尺寸兜住）。
  */
 object JarvisSize {
@@ -168,8 +174,17 @@ object JarvisSize {
     /** 芯片（筛选 chip）视觉高度。 */
     val chipHeight = 40.dp
 
-    /** 列表行最小高度。 */
-    val rowMinHeight = 52.dp
+    /** 紧凑行高下限：48dp（列表行 60 -> 52 -> 48dp）。 */
+    val denseRowHeight = 48.dp
+
+    /** 列表行最小高度：跟随紧凑行高，52 -> 48dp。 */
+    val rowMinHeight = denseRowHeight
+
+    /** 图标动作按钮的视觉直径（20dp 图标 + 8dp 四周留白）；触达仍为 [minTouch]。 */
+    val iconAction = 36.dp
+
+    /** 纯图标按钮视觉边长，比 [iconAction] 再小一档，用于卡片内联的次要动作。 */
+    val iconOnlyButton = 32.dp
 
     /** 可点元素触达下限。 */
     val minTouch = 44.dp

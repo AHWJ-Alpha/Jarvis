@@ -144,33 +144,33 @@ internal class DeepNightTheme : JarvisThemeModule {
             Column(Modifier.fillMaxSize().padding(top = heroHeight - JarvisSpacing.space7)) {
                 JarvisCard(
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = JarvisSpacing.pageHorizontal),
-                    contentPadding = JarvisSpacing.space6) {
+                    contentPadding = JarvisSpacing.cardPadding) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val index = efforts.indexOf(state.reasoningEffort).coerceAtLeast(0)
-                        TextButton(onClick = { cb.onReasoningEffortChange(efforts[(index + 1) % efforts.size]) },
-                            modifier = Modifier.heightIn(min = 48.dp)) {
-                            Icon(Icons.Default.Tune, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(JarvisSpacing.space2))
-                            Text("思考 ${state.reasoningEffort}", style = MaterialTheme.typography.bodySmall)
-                        }
+                        JarvisIconAction(
+                            icon = Icons.Default.Tune,
+                            contentDescription = "思考深度：${state.reasoningEffort}，点击切换",
+                            onClick = { cb.onReasoningEffortChange(efforts[(index + 1) % efforts.size]) })
                         Spacer(Modifier.weight(1f))
-                        DeepIconAction(Icons.Default.Build, "打开工具箱", cb.onOpenTools)
-                        DeepIconAction(Icons.Default.Add, "新建对话", cb.onNewConversation)
-                        DeepIconAction(Icons.Default.CallSplit, "从当前对话创建分支") { cb.onBranch(null) }
+                        JarvisIconRow {
+                            JarvisIconAction(Icons.Default.Build, "打开工具箱", onClick = { cb.onOpenTools() })
+                            JarvisIconAction(Icons.Default.Add, "新建对话", onClick = { cb.onNewConversation() }, tone = JarvisActionTone.ACCENT)
+                            JarvisIconAction(Icons.Default.CallSplit, "从当前对话创建分支", onClick = { cb.onBranch(null) })
+                        }
                     }
-                    Spacer(Modifier.height(JarvisSpacing.space5))
+                    JarvisCardHeaderGap()
                     if (state.messages.isEmpty()) {
                         DeepEmptyState(state.conversationId, Modifier.fillMaxWidth().weight(1f))
                     } else {
                         LazyColumn(state = listState, modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space6)) {
+                            verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)) {
                             items(state.messages, key = { it.id }) { message -> DeepBubble(message, state, cb) }
                         }
                     }
                 }
                 Column(
-                    Modifier.padding(horizontal = JarvisSpacing.pageHorizontal, vertical = JarvisSpacing.space5),
-                    verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)
+                    Modifier.padding(horizontal = JarvisSpacing.pageHorizontal, vertical = JarvisSpacing.rowGap),
+                    verticalArrangement = Arrangement.spacedBy(JarvisSpacing.rowGap)
                 ) {
                     if (state.editingLatest) NoticeLine("正在修改上一条；发送后才会替换原对话轮次。", tone = NoticeTone.SUCCESS)
                     if (state.speechNotice.isNotBlank()) NoticeLine(state.speechNotice)
@@ -192,29 +192,31 @@ internal class DeepNightTheme : JarvisThemeModule {
             Column(
                 Modifier.fillMaxSize().padding(top = heroHeight - JarvisSpacing.space7)
                     .verticalScroll(rememberScrollState()).padding(horizontal = JarvisSpacing.pageHorizontal),
-                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.sectionGap)
+                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)
             ) {
                 val access = if (state.notificationAccess) "已授权" else "未授权"
                 val a11y = if (state.accessibilityGranted) "已连接" else "未连接"
                 DeepCard("运行前检查", "通知访问：${access} · 无障碍：${a11y}", icon = Icons.Outlined.Rule) {
                     NoticeLine("规则默认暂停；启用后只匹配目标应用通知，并在完成后核实结果。")
-                    if (!state.notificationAccess || !state.accessibilityGranted) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            if (!state.notificationAccess) DeepTextButton("授权通知") { cb.onRequestNotificationAccess() }
-                            if (!state.accessibilityGranted) DeepTextButton("开启无障碍") { cb.onRequestAccessibility() }
-                        }
-                    }
                     if (!state.runtimeReady) NoticeLine("运行时尚未就绪，启用后规则无法执行。", tone = NoticeTone.ERROR)
                     if (state.notice.isNotBlank()) NoticeLine(state.notice, tone = NoticeTone.ERROR)
-                    DeepTextButton("重新检查") { cb.onRefresh() }
+                    JarvisIconRow {
+                        if (!state.notificationAccess) {
+                            JarvisIconAction(Icons.Default.Notifications, "授权通知访问", onClick = { cb.onRequestNotificationAccess() })
+                        }
+                        if (!state.accessibilityGranted) {
+                            JarvisIconAction(Icons.Outlined.AccessibilityNew, "开启无障碍服务", onClick = { cb.onRequestAccessibility() })
+                        }
+                        JarvisIconAction(Icons.Default.Refresh, "重新检查运行状态", onClick = { cb.onRefresh() })
+                    }
                 }
                 if (state.rules.isEmpty() && !state.creatingRule) {
                     EmptyStatePanel(
                         title = "还没有自动化", modifier = Modifier.fillMaxWidth(), icon = Icons.Default.Bolt,
                         subtitle = "在对话中输入“当哔哩哔哩上有人回复我就立刻回复”或“当 Pixiv 画师发布新作品就立刻下载”。",
-                        action = { DeepTextButton("新建规则", onClick = cb.onCreateRuleStart) })
+                        action = { JarvisIconAction(Icons.Default.Add, "新建规则", onClick = cb.onCreateRuleStart, tone = JarvisActionTone.ACCENT) })
                 } else if (!state.creatingRule) {
-                    SectionHeader("自动化规则") { DeepTextButton("新建规则") { cb.onCreateRuleStart() } }
+                    SectionHeader("自动化规则") { JarvisIconAction(Icons.Default.Add, "新建规则", onClick = { cb.onCreateRuleStart() }) }
                 }
                 if (state.creatingRule) {
                     DeepCard("新建自动化", "标题与触发要求必填；类型决定后续配置项。", icon = Icons.Outlined.Add) {
@@ -238,23 +240,23 @@ internal class DeepNightTheme : JarvisThemeModule {
                             NoticeLine(state.ruleDraftError, tone = NoticeTone.ERROR)
                         }
                         NoticeLine("新建的规则默认暂停；启用前仍需通知访问与无障碍服务。")
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            DeepTextButton("创建规则") { cb.onCreateRuleSubmit() }
-                            DeepTextButton("取消") { cb.onCreateRuleCancel() }
+                        JarvisIconRow {
+                            JarvisIconAction(Icons.Default.Check, "创建规则", onClick = { cb.onCreateRuleSubmit() }, tone = JarvisActionTone.ACCENT)
+                            JarvisIconAction(Icons.Default.Close, "取消新建规则", onClick = { cb.onCreateRuleCancel() })
                         }
                     }
                 }
                 state.rules.forEach { rule ->
-                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                         SettingSwitchRow(
                             title = rule.title, checked = rule.enabled, subtitle = rule.kindLabel,
                             onCheckedChange = { enabled -> cb.onToggleRule(rule.id, enabled) })
                          NoticeLine(text = if (rule.enabled) "已启用 · 等待目标应用通知" else "已暂停 · 不会自动操作", tone = if (rule.enabled) NoticeTone.SUCCESS else NoticeTone.INFO)
                         rule.readiness?.let { NoticeLine("启用前：${it}", tone = NoticeTone.ERROR) }
                         if (rule.lastResult.isNotBlank()) NoticeLine("最近结果：${rule.lastResult}")
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            DeepTextButton("配置") { cb.onConfigureRule(rule.id) }
-                            DangerActionLabel("删除", onClick = { cb.onDeleteRule(rule.id) })
+                        JarvisIconRow {
+                            JarvisIconAction(Icons.Default.Settings, "配置规则", onClick = { cb.onConfigureRule(rule.id) })
+                            JarvisIconAction(Icons.Default.Delete, "删除规则", onClick = { cb.onDeleteRule(rule.id) }, tone = JarvisActionTone.DANGER)
                         }
                     }
                 }
@@ -269,11 +271,11 @@ internal class DeepNightTheme : JarvisThemeModule {
                             DeepFields(DeepFieldSpec("回复风格要求", state.replyDraft, cb.onReplyDraftChange, 2))
                         }
                         NoticeLine("启用前还需要目标应用通知访问和 Jarvis 无障碍服务。")
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            DeepTextButton("保存") {
+                        JarvisIconRow {
+                            JarvisIconAction(Icons.Default.Check, "保存规则配置", onClick = {
                                 cb.onSaveRuleConfig(editing.id, state.artistDraft, state.replyDraft)
-                            }
-                            DeepTextButton("取消") { cb.onCancelRuleConfig() }
+                            }, tone = JarvisActionTone.ACCENT)
+                            JarvisIconAction(Icons.Default.Close, "取消配置", onClick = { cb.onCancelRuleConfig() })
                         }
                     }
                 }
@@ -283,7 +285,7 @@ internal class DeepNightTheme : JarvisThemeModule {
                         text = "${if (event.ok) "✓" else "!"} ${event.title} · ${event.message}",
                         tone = if (event.ok) NoticeTone.SUCCESS else NoticeTone.ERROR)
                 }
-                Spacer(Modifier.height(JarvisSpacing.space7))
+                Spacer(Modifier.height(JarvisSpacing.cardGap))
             }
         }
     }
@@ -302,7 +304,7 @@ internal class DeepNightTheme : JarvisThemeModule {
             Column(
                 Modifier.fillMaxSize().padding(top = heroHeight - JarvisSpacing.space7)
                     .verticalScroll(rememberScrollState()).padding(horizontal = JarvisSpacing.pageHorizontal),
-                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.sectionGap)
+                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)
             ) {
                 SettingSwitchRow(
                     title = "显示已归档",
@@ -311,17 +313,19 @@ internal class DeepNightTheme : JarvisThemeModule {
                     subtitle = "已归档 ${state.archivedWorkspaces.size} 个工作区 · ${state.archivedConversationIds.size} 个对话；归档不删任何数据")
                 state.workspaces.forEach { profile ->
                     val count = state.conversationCountByWorkspace[profile.name] ?: 0
-                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6, onClick = { cb.onSelect(profile.name) }) {
+                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding, onClick = { cb.onSelect(profile.name) }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Image(painterResource(R.drawable.theme_deep_night_thumb), null,
-                                Modifier.size(56.dp).clip(JarvisShapes.md), contentScale = ContentScale.Crop)
-                            Spacer(Modifier.width(JarvisSpacing.space4))
+                                Modifier.size(44.dp).clip(JarvisShapes.md), contentScale = ContentScale.Crop)
+                            Spacer(Modifier.width(JarvisSpacing.space3))
                             Text(profile.name, style = JarvisType.titleBlock,
                                 color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-                            if (profile.name == state.selectedWorkspace) StatusBadge("当前", BadgeTone.ACTIVE)
+                            if (profile.name == state.selectedWorkspace) {
+                                JarvisGlyphLabel(Icons.Default.CheckCircle, "当前", tone = JarvisActionTone.ACCENT)
+                            }
                             if (profile.archived) {
                                 Spacer(Modifier.width(JarvisSpacing.space2))
-                                StatusBadge("已归档", BadgeTone.NEUTRAL)
+                                JarvisGlyphLabel(Icons.Default.Archive, "已归档")
                             }
                         }
                         val persona = if (profile.useGlobalPersona) "共同人格与世界书" else "自定义人格与世界书"
@@ -331,16 +335,23 @@ internal class DeepNightTheme : JarvisThemeModule {
                             profile.hasDirectory -> "目录：已绑定（无显示名）"
                             else -> "目录：未绑定"
                         })
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
-                            DeepTextButton("进入") { cb.onSelect(profile.name) }
-                            DeepTextButton("编辑") { editing = profile }
-                            if (profile.archived) DeepTextButton("还原") { cb.onUnarchive(profile.name) }
-                            else DeepTextButton("归档") { cb.onArchive(profile.name) }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
-                            DeepTextButton(if (profile.hasDirectory) "换目录" else "绑定目录") { cb.onPickDirectory(profile.name) }
-                            if (profile.hasDirectory) DeepTextButton("解绑目录") { cb.onClearDirectory(profile.name) }
-                            DangerActionLabel("删除", onClick = { cb.onDelete(profile.name) })
+                        JarvisIconRow {
+                            JarvisIconAction(Icons.Default.ArrowForward, "进入该工作区",
+                                onClick = { cb.onSelect(profile.name) }, tone = JarvisActionTone.ACCENT)
+                            JarvisIconAction(Icons.Default.Edit, "编辑工作区", onClick = { editing = profile })
+                            if (profile.archived) {
+                                JarvisIconAction(Icons.Default.Unarchive, "还原工作区", onClick = { cb.onUnarchive(profile.name) })
+                            } else {
+                                JarvisIconAction(Icons.Default.Archive, "归档工作区", onClick = { cb.onArchive(profile.name) })
+                            }
+                            JarvisIconAction(Icons.Default.FolderOpen,
+                                if (profile.hasDirectory) "更换绑定目录" else "绑定只读目录",
+                                onClick = { cb.onPickDirectory(profile.name) })
+                            if (profile.hasDirectory) {
+                                JarvisIconAction(Icons.Default.LinkOff, "解绑目录", onClick = { cb.onClearDirectory(profile.name) })
+                            }
+                            JarvisIconAction(Icons.Default.Delete, "删除工作区",
+                                onClick = { cb.onDelete(profile.name) }, tone = JarvisActionTone.DANGER)
                         }
                     }
                 }
@@ -363,27 +374,36 @@ internal class DeepNightTheme : JarvisThemeModule {
                     val shown = state.conversations.take(30)
                     shown.forEachIndexed { index, session ->
                         ListRow(
-                            modifier = Modifier.fillMaxWidth().heightIn(min = JarvisSize.rowMinHeight),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight),
                             title = session.title.ifBlank { "未命名对话" },
                             subtitle = session.workspace + if (session.isArchived) " · 已归档" else "")
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
-                            DeepTextButton("改名") {
+                        JarvisIconRow {
+                            JarvisIconAction(Icons.Default.Edit, "重命名会话", onClick = {
                                 renamingId = if (renamingId == session.id) null else session.id
                                 renameDraft = session.title
+                            })
+                            JarvisIconAction(Icons.Default.SwapHoriz, "移动到其他工作区", onClick = {
+                                movingId = if (movingId == session.id) null else session.id
+                            })
+                            if (session.isArchived) {
+                                JarvisIconAction(Icons.Default.Unarchive, "还原会话", onClick = { cb.onUnarchiveConversation(session.id) })
+                            } else {
+                                JarvisIconAction(Icons.Default.Archive, "归档会话", onClick = { cb.onArchiveConversation(session.id) })
                             }
-                            DeepTextButton("移动") { movingId = if (movingId == session.id) null else session.id }
-                            if (session.isArchived) DeepTextButton("还原") { cb.onUnarchiveConversation(session.id) }
-                            else DeepTextButton("归档") { cb.onArchiveConversation(session.id) }
-                            DangerActionLabel("删除", onClick = { cb.onDeleteConversation(session.id) })
+                            JarvisIconAction(Icons.Default.Delete, "删除会话",
+                                onClick = { cb.onDeleteConversation(session.id) }, tone = JarvisActionTone.DANGER)
                         }
                         if (renamingId == session.id) {
                             DeepFields(DeepFieldSpec("会话标题", renameDraft, { renameDraft = it.take(60) }))
-                            Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                                DeepTextButton("保存", enabled = renameDraft.isNotBlank()) {
-                                    cb.onRenameConversation(session.id, renameDraft.trim())
-                                    renamingId = null
-                                }
-                                DeepTextButton("取消") { renamingId = null }
+                            JarvisIconRow {
+                                JarvisIconAction(Icons.Default.Check, "保存新标题",
+                                    enabled = renameDraft.isNotBlank(),
+                                    onClick = {
+                                        cb.onRenameConversation(session.id, renameDraft.trim())
+                                        renamingId = null
+                                    },
+                                    tone = JarvisActionTone.ACCENT)
+                                JarvisIconAction(Icons.Default.Close, "取消改名", onClick = { renamingId = null })
                             }
                         }
                         if (movingId == session.id) {
@@ -405,7 +425,7 @@ internal class DeepNightTheme : JarvisThemeModule {
                     }
                 }
                 DeepWorkspaceForm(artwork, editing, state, cb) { editing = null }
-                Spacer(Modifier.height(JarvisSpacing.space7))
+                Spacer(Modifier.height(JarvisSpacing.cardGap))
             }
         }
     }
@@ -421,7 +441,7 @@ internal class DeepNightTheme : JarvisThemeModule {
             Column(
                 Modifier.fillMaxSize().padding(top = heroHeight - JarvisSpacing.space7)
                     .verticalScroll(rememberScrollState()).padding(horizontal = JarvisSpacing.pageHorizontal),
-                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.sectionGap)
+                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)
             ) {
                 Image(
                     painterResource(R.drawable.theme_deep_night_portrait_header), null,
@@ -431,11 +451,10 @@ internal class DeepNightTheme : JarvisThemeModule {
                     val current = state.themeOptions.firstOrNull { it.id == state.themeId }
                     NoticeLine("当前：${current?.label ?: state.theme.label}", tone = NoticeTone.SUCCESS)
                     if (current != null) NoticeLine("${current.story} · ${current.description}")
-                    Spacer(Modifier.height(JarvisSpacing.space3))
                     DeepChipRow(state.themeOptions.map { it.label },
                         state.themeOptions.indexOfFirst { it.id == state.themeId },
                         { cb.onThemeChangeById(state.themeOptions[it].id) })
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     val modes = listOf(ThemeModeOverride.FOLLOW_SYSTEM, ThemeModeOverride.LIGHT, ThemeModeOverride.DARK)
                     val modeLabels = listOf("跟随系统", "浅色", "深色")
                     NoticeLine("明暗：${modeLabels[modes.indexOf(state.modeOverride).coerceAtLeast(0)]} · 当前渲染 ${if (state.effectiveMode == ThemeMode.LIGHT) "浅色" else "深色"}")
@@ -445,7 +464,7 @@ internal class DeepNightTheme : JarvisThemeModule {
                 DeepCard("OpenClaw 运行时", "单 APK 运行目录和插件目录状态", icon = Icons.Outlined.Cloud) {
                     val report = state.bootstrapReport
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusBadge(runtimeLabel(report.state), runtimeTone(report.state))
+                        JarvisGlyphLabel(runtimeIcon(report.state), runtimeLabel(report.state), tone = runtimeTone(report.state))
                         Spacer(Modifier.width(JarvisSpacing.space3))
                         NoticeLine("版本：${state.versionName.ifBlank { report.runtimeVersion }}")
                     }
@@ -454,10 +473,10 @@ internal class DeepNightTheme : JarvisThemeModule {
                     NoticeLine("root：${root} · Bridge Token：${token}")
                     NoticeLine("插件目录：${report.pluginDirectory}")
                     if (state.runtimeMessage.isNotBlank()) NoticeLine(state.runtimeMessage)
-                    Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        DeepTextButton("启动 Gateway") { cb.onStartRuntime() }
-                        DeepTextButton("停止") { cb.onStopRuntime() }
-                        DeepTextButton("重新检查") { cb.onRefreshRuntime() }
+                    JarvisIconRow {
+                        JarvisIconAction(Icons.Default.PlayArrow, "启动 Gateway", onClick = { cb.onStartRuntime() }, tone = JarvisActionTone.ACCENT)
+                        JarvisIconAction(Icons.Default.Stop, "停止 Gateway", onClick = { cb.onStopRuntime() })
+                        JarvisIconAction(Icons.Default.Refresh, "重新检查运行时", onClick = { cb.onRefreshRuntime() })
                     }
                 }
                 DeepCard("模型与连接", "兼容 OpenAI Chat Completions 的服务；关闭思考时不发送 reasoning_effort", icon = Icons.Outlined.Router) {
@@ -470,23 +489,23 @@ internal class DeepNightTheme : JarvisThemeModule {
                     val efforts = state.reasoningEfforts.ifEmpty { defaultEfforts }
                     DeepChipRow(efforts, efforts.indexOf(state.reasoningEffort).coerceAtLeast(0),
                         { cb.onReasoningEffortChange(efforts[it]) })
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     DeepFields(
                         DeepFieldSpec("命令前缀", state.commandPrefix, cb.onPrefixChange),
                         DeepFieldSpec("模型 Base URL", state.modelBaseUrl, cb.onModelBaseUrlChange),
                         DeepFieldSpec("模型名", state.modelName, cb.onModelNameChange),
-                        DeepFieldSpec("模型 API Key", state.modelApiKey, cb.onModelApiKeyChange),
+                        DeepFieldSpec("模型 API Key", state.modelApiKey, cb.onModelApiKeyChange, secret = true),
                         DeepFieldSpec("模型回退链（每行一个，可选）", state.modelChain, cb.onModelChainChange, 3),
                         DeepFieldSpec("深度思考模型（可选）", state.deepThinkingModel, cb.onDeepThinkingModelChange),
                         DeepFieldSpec("识图 Base URL", state.visionBaseUrl, cb.onVisionBaseUrlChange),
                         DeepFieldSpec("识图模型名", state.visionModel, cb.onVisionModelChange),
-                        DeepFieldSpec("识图 API Key", state.visionApiKey, cb.onVisionApiKeyChange)
+                        DeepFieldSpec("识图 API Key", state.visionApiKey, cb.onVisionApiKeyChange, secret = true)
                     )
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
-                    Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
+                    JarvisIconRow {
+                        JarvisIconAction(Icons.Default.Check, "保存并生效", onClick = { cb.onApply() }, tone = JarvisActionTone.ACCENT)
+                        JarvisIconAction(Icons.Default.CheckCircle, "保存并验证主模型", onClick = { cb.onApplyAndVerify() })
                         if (state.saving) JarvisLoading("应用中…")
-                        DeepTextButton("保存并生效") { cb.onApply() }
-                        DeepTextButton("保存并验证主模型") { cb.onApplyAndVerify() }
                     }
                     if (state.applyNotice.isNotBlank()) {
                         NoticeLine(state.applyNotice, tone = if (state.applyFailed) NoticeTone.ERROR else NoticeTone.SUCCESS)
@@ -498,7 +517,7 @@ internal class DeepNightTheme : JarvisThemeModule {
                         ListRow(
                             title = mode.label,
                             subtitle = if (current) "当前：${mode.label}" else null,
-                            trailing = if (current) null else ({ StatusBadge("切换", BadgeTone.NEUTRAL) }),
+                            trailing = if (current) null else ({ JarvisGlyphLabel(Icons.Default.SwapHoriz, "切换") }),
                             onClick = { cb.onRootModeRequest(mode) })
                     }
                 }
@@ -506,9 +525,9 @@ internal class DeepNightTheme : JarvisThemeModule {
                      DeepFields(DeepFieldSpec("全局提示词", state.mentorPrompt, cb.onMentorPromptChange, 3), DeepFieldSpec("全局世界书", state.worldBook, cb.onWorldBookChange, 3))
                     if (state.importNotice.isNotBlank()) NoticeLine(state.importNotice, tone = NoticeTone.SUCCESS)
                     if (state.exportNotice.isNotBlank()) NoticeLine(state.exportNotice)
-                    Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        DeepTextButton("导入") { cb.onImportAiClassroom() }
-                        DeepTextButton("导出") { cb.onExportAiClassroom() }
+                    JarvisIconRow {
+                        JarvisIconAction(Icons.Default.Download, "导入 AI Classroom 数据", onClick = { cb.onImportAiClassroom() })
+                        JarvisIconAction(Icons.Default.Upload, "导出 AI Classroom 数据", onClick = { cb.onExportAiClassroom() })
                     }
                 }
                 DeepCard("远程访问", "通过局域网或 Tailscale 访问网页控制台", icon = Icons.Outlined.Lan) {
@@ -517,20 +536,21 @@ internal class DeepNightTheme : JarvisThemeModule {
                         subtitle = if (state.serverRunning) "已开启；配对令牌 5 分钟内有效" else "默认关闭；只允许已配对的浏览器提交任务")
                     if (state.pairingCode.isNotBlank()) {
                         NoticeLine("一次性配对码：${state.pairingCode}", tone = NoticeTone.SUCCESS)
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            DeepTextButton("复制配对码") { cb.onCopyPairingCode() }
-                            DeepTextButton("撤销配对") { cb.onRevokePairing() }
+                        JarvisIconRow {
+                            JarvisIconAction(Icons.Default.ContentCopy, "复制配对码", onClick = { cb.onCopyPairingCode() })
+                            JarvisIconAction(Icons.Default.LinkOff, "撤销配对", onClick = { cb.onRevokePairing() })
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        DeepTextButton("生成配对码") { cb.onNewPairingCode() }
-                        DeepTextButton("刷新地址") { cb.onRefreshRemoteUrls() }
+                    JarvisIconRow {
+                        JarvisIconAction(Icons.Default.VpnKey, "生成配对码", onClick = { cb.onNewPairingCode() }, tone = JarvisActionTone.ACCENT)
+                        JarvisIconAction(Icons.Default.Refresh, "刷新远程地址", onClick = { cb.onRefreshRemoteUrls() })
                     }
                     state.remoteUrls.forEach { NoticeLine("${it}") }
                     SettingSwitchRow("允许远程设备调用本机能力", state.remoteDeviceControl, cb.onRemoteDeviceControlChange)
                 }
                 DeepCard("运行时工具与插件", "查看 CMake、FFmpeg、Python、Rust 等命令是否可用", icon = Icons.Outlined.Extension) {
-                    if (state.checkingTools) JarvisLoading("正在检查工具路径") else DeepTextButton("重新检查工具") { cb.onRefreshTools() }
+                    if (state.checkingTools) JarvisLoading("正在检查工具路径")
+                    else JarvisIconAction(Icons.Default.Refresh, "重新检查工具路径", onClick = { cb.onRefreshTools() })
                     val cmake = if (state.cmakeReady) "可用" else "缺失"
                     val ffmpeg = if (state.ffmpegReady) "可用" else "缺失"
                     NoticeLine("CMake：${cmake} · FFmpeg：${ffmpeg}")
@@ -542,32 +562,35 @@ internal class DeepNightTheme : JarvisThemeModule {
                             title = tool.name,
                             subtitle = if (source.isBlank() || subtitle.contains(source)) subtitle else "${subtitle} · ${source}",
                             trailing = if (tool.installed) null else ({
-                                DeepTextButton("安装") { cb.onInstallTool(detail?.id ?: tool.name) }
+                                JarvisIconAction(Icons.Default.Download, "安装 ${tool.name}",
+                                    onClick = { cb.onInstallTool(detail?.id ?: tool.name) })
                             })
                         )
                     }
                     if (state.toolNotice.isNotBlank()) NoticeLine(state.toolNotice)
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         NoticeLine("社区插件 ${state.plugins.size} 个", tone = NoticeTone.SUCCESS)
                         Spacer(Modifier.weight(1f))
-                        if (state.pluginBusy) JarvisLoading("处理中") else DeepTextButton("刷新") { cb.onRefreshPlugins() }
+                        if (state.pluginBusy) JarvisLoading("处理中")
+                        else JarvisIconAction(Icons.Default.Refresh, "刷新插件列表", onClick = { cb.onRefreshPlugins() })
                     }
                     state.plugins.forEach { plugin ->
                         SettingSwitchRow(
                             title = plugin.name, checked = plugin.enabled,
                             subtitle = "${plugin.version} · ${plugin.tools.size} 个工具",
                             onCheckedChange = { enabled -> cb.onTogglePlugin(plugin.id, enabled) })
-                        DangerActionLabel("卸载 ${plugin.name}", onClick = { cb.onUninstallPlugin(plugin.id) })
+                        JarvisIconAction(Icons.Default.Delete, "卸载 ${plugin.name}",
+                            onClick = { cb.onUninstallPlugin(plugin.id) }, tone = JarvisActionTone.DANGER)
                     }
                     if (state.pluginNotice.isNotBlank()) NoticeLine(state.pluginNotice)
                     DeepFields(
                         DeepFieldSpec("粘贴插件草稿（JSON 或清单文本）", pluginDraft, { pluginDraft = it }, 3)
                     )
-                    DeepTextButton("安装插件", enabled = pluginDraft.isNotBlank()) {
+                    JarvisIconAction(Icons.Default.Add, "安装插件草稿", enabled = pluginDraft.isNotBlank(), onClick = {
                         cb.onInstallPlugin(pluginDraft)
                         pluginDraft = ""
-                    }
+                    }, tone = JarvisActionTone.ACCENT)
                 }
                 DeepCard("操作记忆", "首次成功后学习，后续优先复用；失败时重新探索", icon = Icons.Outlined.History) {
                     if (state.memoryStatus.isNotBlank()) NoticeLine(state.memoryStatus)
@@ -576,9 +599,10 @@ internal class DeepNightTheme : JarvisThemeModule {
                             title = entry.title,
                             subtitle = if (entry.ready) "可复用 · 成功 ${entry.successes} / 失败 ${entry.failures}"
                             else "已失效，待重新学习 · 成功 ${entry.successes} / 失败 ${entry.failures}",
-                            trailing = { DangerActionLabel("删除", onClick = { cb.onDeleteMemoryEntry(entry.id) }) })
+                            trailing = { JarvisIconAction(Icons.Default.Delete, "删除该操作记忆",
+                                onClick = { cb.onDeleteMemoryEntry(entry.id) }, tone = JarvisActionTone.DANGER) })
                     }
-                    DeepTextButton("刷新操作路径") { cb.onRefreshMemory() }
+                    JarvisIconAction(Icons.Default.Refresh, "刷新操作路径", onClick = { cb.onRefreshMemory() })
                 }
                 DeepCard("悬浮助手与无障碍", "语音识别后直接执行；首次需要悬浮窗与无障碍授权", icon = Icons.Outlined.AccessibilityNew) {
                     SettingSwitchRow("启用悬浮球", state.floatingEnabled, cb.onFloatingEnabledChange,
@@ -587,9 +611,9 @@ internal class DeepNightTheme : JarvisThemeModule {
                     val a11y = if (state.accessibilityGranted) "已启用" else "未启用"
                     NoticeLine("悬浮窗：${overlay} · 无障碍：${a11y}")
                     if (state.accessibilityStatus.isNotBlank()) NoticeLine(state.accessibilityStatus)
-                    Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        DeepTextButton("悬浮窗权限") { cb.onOverlayPermissionRequest() }
-                        DeepTextButton("无障碍设置") { cb.onAccessibilitySettingsOpen() }
+                    JarvisIconRow {
+                        JarvisIconAction(Icons.Default.OpenInNew, "悬浮窗权限", onClick = { cb.onOverlayPermissionRequest() })
+                        JarvisIconAction(Icons.Default.Settings, "无障碍设置", onClick = { cb.onAccessibilitySettingsOpen() })
                     }
                     SettingSwitchRow("打开 Jarvis 时自动连接", state.accessibilityAutoConnect,
                         cb.onAccessibilityAutoConnectChange, subtitle = "需要 root 完全模式；关闭不会撤销已有授权")
@@ -641,7 +665,7 @@ internal class DeepNightTheme : JarvisThemeModule {
                         }
                     }
                 }
-                Spacer(Modifier.height(JarvisSpacing.space7))
+                Spacer(Modifier.height(JarvisSpacing.cardGap))
             }
         }
     }
@@ -692,7 +716,7 @@ private fun DeepChipRow(items: List<String>, selectedIndex: Int, onSelect: (Int)
     }
 }
 
-private data class DeepFieldSpec(val label: String, val value: String, val onChange: (String) -> Unit, val minLines: Int = 1)
+private data class DeepFieldSpec(val label: String, val value: String, val onChange: (String) -> Unit, val minLines: Int = 1, val secret: Boolean = false)
 
 /** 对话空态：轮换插画（≤200dp，在内容流里）+ 两行文案，不叠内容、不做满屏背景。 */
 @Composable
@@ -723,20 +747,23 @@ private fun DeepEmptyState(conversationId: String, modifier: Modifier = Modifier
 private fun DeepFileRow(file: WorkspaceFileView) {
     var expanded by remember(file.name, file.previewText) { mutableStateOf(false) }
     ListRow(
-        modifier = Modifier.fillMaxWidth().heightIn(min = JarvisSize.rowMinHeight),
+        modifier = Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight),
         title = file.name.ifBlank { "（未命名）" },
         subtitle = buildString {
             append(if (file.isDirectory) "目录" else deepFileSize(file.sizeBytes))
             if (file.previewable) append(" · 可预览")
         },
         trailing = if (file.previewable) ({
-            StatusBadge(if (expanded) "收起" else "预览", BadgeTone.NEUTRAL)
+            JarvisIconAction(
+                icon = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "收起预览" else "预览文本",
+                onClick = { expanded = !expanded })
         }) else null,
         onClick = if (file.previewable) ({ expanded = !expanded }) else null)
     if (expanded) {
         JarvisInsetCard(
             modifier = Modifier.fillMaxWidth().padding(top = JarvisSpacing.space2),
-            contentPadding = JarvisSpacing.space4
+            contentPadding = JarvisSpacing.insetCardPadding
         ) {
             Text(file.previewText, style = JarvisType.codeInline,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -785,39 +812,26 @@ private fun DeepBubble(message: ChatMessage, state: ChatUiContext.ChatState, cb:
             Column(
                 Modifier.clip(if (isUser) JarvisShapes.md else JarvisShapes.lg)
                     .background(if (isUser) scheme.primaryContainer else scheme.surfaceContainer)
-                    .padding(horizontal = JarvisSpacing.space5, vertical = JarvisSpacing.space4)) {
+                    .padding(horizontal = JarvisSpacing.space5, vertical = JarvisSpacing.space3)) {
                 Text(message.content, style = MaterialTheme.typography.bodyMedium,
                     color = if (isUser) scheme.onPrimaryContainer else scheme.onSurface)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
-            DeepTextButton("分支", enabled = !state.sending) { cb.onBranch(message.id) }
+        JarvisIconRow {
+            JarvisIconAction(Icons.Default.CallSplit, "从这条消息创建分支",
+                enabled = !state.sending, onClick = { cb.onBranch(message.id) })
             if (isUser && message.id == lastUserId) {
-                DeepTextButton(
-                    text = if (state.editingLatest) "取消编辑" else "编辑",
-                    enabled = !state.sending && (state.editingLatest || state.canEditLatest)
-                ) {
-                    if (state.editingLatest) cb.onCancelEdit() else cb.onEditLatest()
+                val editable = !state.sending && (state.editingLatest || state.canEditLatest)
+                if (state.editingLatest) {
+                    JarvisIconAction(Icons.Default.Close, "取消编辑", enabled = editable, onClick = { cb.onCancelEdit() })
+                } else {
+                    JarvisIconAction(Icons.Default.Edit, "编辑上一条消息", enabled = editable, onClick = { cb.onEditLatest() })
                 }
             }
             if (message.id == state.messages.lastOrNull()?.id) {
-                DeepTextButton("撤销", enabled = state.canUndoLatest, onClick = cb.onUndoLatest)
+                JarvisIconAction(Icons.Default.Undo, "撤销最后一条", enabled = state.canUndoLatest, onClick = cb.onUndoLatest)
             }
         }
-    }
-}
-
-@Composable
-private fun DeepTextButton(text: String, enabled: Boolean = true, onClick: () -> Unit) {
-    TextButton(onClick = onClick, enabled = enabled, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-        Text(text, style = JarvisType.titleItem)
-    }
-}
-
-@Composable
-private fun DeepIconAction(icon: ImageVector, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(JarvisSize.minTouch)) {
-        Icon(icon, description, modifier = Modifier.size(JarvisSize.toolbarIcon), tint = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -848,7 +862,7 @@ private fun DeepComposer(draft: String, editing: Boolean, sending: Boolean, cb: 
                     }
                 }
             )
-            DeepIconAction(Icons.Default.Mic, "语音转文字", cb.onVoiceInput)
+            JarvisIconAction(Icons.Default.Mic, "语音转文字", onClick = { cb.onVoiceInput() })
             IconButton(
                 onClick = { cb.onSend(draft.trim()) }, enabled = sendEnabled,
                 modifier = Modifier.size(JarvisSize.sendButton).clip(JarvisShapes.pill)
@@ -870,7 +884,7 @@ private fun DeepCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
-    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (avatar != null) {
                 Image(painterResource(avatar), null, Modifier.size(44.dp).clip(JarvisShapes.sm),
@@ -883,22 +897,31 @@ private fun DeepCard(
                     Icon(icon, null, modifier = Modifier.size(20.dp), tint = scheme.primary)
                 }
             }
-            Spacer(Modifier.width(JarvisSpacing.space4))
+            Spacer(Modifier.width(JarvisSpacing.space3))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, color = scheme.onSurface)
                 Spacer(Modifier.height(JarvisSpacing.space2))
                 Text(subtitle, style = JarvisType.bodyMeta, color = scheme.onSurfaceVariant)
             }
         }
-        Spacer(Modifier.height(JarvisSpacing.space5))
+        JarvisCardHeaderGap()
         content()
     }
 }
 
 @Composable
 private fun DeepFields(vararg specs: DeepFieldSpec) {
-    Column(verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space4)) {
+    Column(verticalArrangement = Arrangement.spacedBy(JarvisSpacing.rowGap)) {
         specs.forEach { spec ->
+            if (spec.secret) {
+                JarvisSecretField(
+                    label = spec.label, value = spec.value, onValueChange = spec.onChange,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    valueColor = MaterialTheme.colorScheme.onSurface,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    accentColor = MaterialTheme.colorScheme.primary)
+                return@forEach
+            }
             TextField(
                 value = spec.value, onValueChange = spec.onChange, modifier = Modifier.fillMaxWidth(),
                 label = {
@@ -932,7 +955,7 @@ private fun DeepWorkspaceForm(
     var persona by remember(initial) { mutableStateOf(initial?.mentorPrompt ?: "") }
     var worldBook by remember(initial) { mutableStateOf(initial?.worldBook ?: "") }
     val clean = name.trim()
-    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(40.dp).clip(JarvisShapes.sm).background(MaterialTheme.colorScheme.surfaceContainer),
@@ -944,7 +967,7 @@ private fun DeepWorkspaceForm(
             Text(if (initial == null) "新建工作区" else "编辑工作区",
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
         }
-        Spacer(Modifier.height(JarvisSpacing.space4))
+        JarvisCardHeaderGap()
         DeepFields(DeepFieldSpec("工作区名称", name, { name = it.take(60) }))
         SettingSwitchRow(
             title = "使用共同设定",
@@ -961,17 +984,21 @@ private fun DeepWorkspaceForm(
                 }
             }
         }
-        Spacer(Modifier.height(JarvisSpacing.space3))
-        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-            DeepTextButton(if (initial == null) "创建并进入" else "保存", enabled = clean.isNotEmpty()) {
-                cb.onSave(
-                    WorkspaceProfile(
-                        name = clean, useGlobalPersona = useGlobal,
-                        mentorPrompt = if (useGlobal) "" else persona.trim(),
-                        worldBook = if (useGlobal) "" else worldBook.trim()),
-                    initial?.name)
-            }
-            if (initial != null) DeepTextButton("取消", onClick = onDismiss)
+        JarvisCardHeaderGap()
+        JarvisIconRow {
+            JarvisIconAction(Icons.Default.Check,
+                if (initial == null) "创建并进入工作区" else "保存工作区",
+                enabled = clean.isNotEmpty(),
+                onClick = {
+                    cb.onSave(
+                        WorkspaceProfile(
+                            name = clean, useGlobalPersona = useGlobal,
+                            mentorPrompt = if (useGlobal) "" else persona.trim(),
+                            worldBook = if (useGlobal) "" else worldBook.trim()),
+                        initial?.name)
+                },
+                tone = JarvisActionTone.ACCENT)
+            if (initial != null) JarvisIconAction(Icons.Default.Close, "取消编辑工作区", onClick = onDismiss)
         }
     }
 }
@@ -984,9 +1011,15 @@ private fun runtimeLabel(state: RuntimeState): String = when (state) {
     RuntimeState.ERROR -> "配置错误"
 }
 
-private fun runtimeTone(state: RuntimeState): BadgeTone = when (state) {
-    RuntimeState.READY, RuntimeState.RUNNING -> BadgeTone.ACTIVE
-    RuntimeState.DEGRADED -> BadgeTone.WARNING
-    RuntimeState.ERROR -> BadgeTone.ERROR
-    RuntimeState.NOT_CONFIGURED -> BadgeTone.NEUTRAL
+/** 运行时状态 -> 图标与语气：状态本身靠图标形状 + 颜色表达，文字只留 2~4 个汉字。 */
+private fun runtimeIcon(state: RuntimeState): ImageVector = when (state) {
+    RuntimeState.READY, RuntimeState.RUNNING -> Icons.Default.CheckCircle
+    RuntimeState.ERROR -> Icons.Default.Warning
+    RuntimeState.DEGRADED, RuntimeState.NOT_CONFIGURED -> Icons.Default.Info
+}
+
+private fun runtimeTone(state: RuntimeState): JarvisActionTone = when (state) {
+    RuntimeState.READY, RuntimeState.RUNNING -> JarvisActionTone.ACCENT
+    RuntimeState.ERROR -> JarvisActionTone.DANGER
+    RuntimeState.DEGRADED, RuntimeState.NOT_CONFIGURED -> JarvisActionTone.NEUTRAL
 }

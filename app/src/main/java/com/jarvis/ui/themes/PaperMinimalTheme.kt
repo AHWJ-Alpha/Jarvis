@@ -12,8 +12,44 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Handyman
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PictureInPicture
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Unarchive
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -37,18 +73,21 @@ import com.jarvis.app.runtime.ChatMessage
 import com.jarvis.app.runtime.ChatMessageRole
 import com.jarvis.app.runtime.RuntimeState
 import com.jarvis.app.runtime.WorkspaceProfile
-import com.jarvis.ui.components.BadgeTone
-import com.jarvis.ui.components.DangerActionLabel
 import com.jarvis.ui.components.EmptyStatePanel
+import com.jarvis.ui.components.JarvisActionTone
+import com.jarvis.ui.components.JarvisCardHeaderGap
 import com.jarvis.ui.components.JarvisChipRow
 import com.jarvis.ui.components.JarvisDivider
+import com.jarvis.ui.components.JarvisGlyphLabel
+import com.jarvis.ui.components.JarvisIconAction
+import com.jarvis.ui.components.JarvisIconRow
 import com.jarvis.ui.components.JarvisInsetCard
 import com.jarvis.ui.components.JarvisLoading
+import com.jarvis.ui.components.JarvisSecretField
 import com.jarvis.ui.components.NoticeLine
 import com.jarvis.ui.components.NoticeTone
 import com.jarvis.ui.components.SectionHeader
 import com.jarvis.ui.components.SettingSwitchRow
-import com.jarvis.ui.components.StatusBadge
 import com.jarvis.ui.components.jarvisScreenPadding
 import com.jarvis.ui.theme.AutomationRuleView
 import com.jarvis.ui.theme.ChatUiContext
@@ -70,8 +109,8 @@ import com.jarvis.ui.tokens.JarvisSize
 import com.jarvis.ui.tokens.JarvisSpacing
 import com.jarvis.ui.tokens.JarvisType
 
-/** 清单行高：收敛到 JarvisSize.rowMinHeight（52dp），不再是主题私有的 64dp。 */
-private val RowHeight = JarvisSize.rowMinHeight
+/** 清单行高：直接取 JarvisSize.denseRowHeight（48dp），与 rowMinHeight 同值。 */
+private val RowHeight = JarvisSize.denseRowHeight
 
 /** 选中竖条的图形宽度（不是间距）。 */
 private val AccentStrip = 2.dp
@@ -229,7 +268,7 @@ internal object PaperMinimalTheme : JarvisThemeModule {
         Text(title, color = pal.onBackground, style = JarvisType.displaySection)
         Spacer(Modifier.height(JarvisSpacing.space2))
         Meta(subtitle)
-        Spacer(Modifier.height(JarvisSpacing.cardGap))
+        Spacer(Modifier.height(JarvisSpacing.rowGap))
         JarvisDivider()
     }
 
@@ -308,7 +347,15 @@ internal object PaperMinimalTheme : JarvisThemeModule {
         minLines: Int = 1
     ) {
         val pal = pal()
-        Column(Modifier.fillMaxWidth().padding(vertical = JarvisSpacing.space3)) {
+        if (secret) {
+            JarvisSecretField(
+                label = label, value = value, onValueChange = onValueChange, hint = hint,
+                labelStyle = JarvisType.labelBadge, valueStyle = JarvisType.bodyBase,
+                labelColor = pal.onSurfaceVariant, valueColor = pal.onSurface,
+                containerColor = pal.surfaceContainerLow, accentColor = pal.primary)
+            return
+        }
+        Column(Modifier.fillMaxWidth().padding(vertical = JarvisSpacing.space2)) {
             Text(label, color = pal.onSurfaceVariant, style = JarvisType.labelBadge)
             Spacer(Modifier.height(JarvisSpacing.space2))
             Box(
@@ -356,34 +403,6 @@ internal object PaperMinimalTheme : JarvisThemeModule {
     private fun IntChips(choices: List<Int>, current: Int, suffix: String, onPick: (Int) -> Unit) =
         Chips(choices.map { it.toString() + suffix }, choices.indexOf(current)) { onPick(choices[it]) }
 
-    /** 文字动作：不用 Material 按钮底，触达高度钉在 JarvisSize.minTouch（44dp）。 */
-    @Composable
-    private fun TextAction(
-        text: String,
-        onClick: () -> Unit,
-        color: Color? = null,
-        enabled: Boolean = true
-    ) {
-        val pal = pal()
-        Box(
-            Modifier.heightIn(min = JarvisSize.minTouch)
-                .clip(JarvisShapes.xs)
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-                .padding(horizontal = JarvisSpacing.space3),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text,
-                color = when {
-                    !enabled -> pal.onSurfaceVariant
-                    color != null -> color
-                    else -> pal.onSurface
-                },
-                style = JarvisType.titleItem
-            )
-        }
-    }
-
     /* ---------------- 对话 ---------------- */
     @Composable
     override fun ChatScreen(ctx: ChatUiContext) {
@@ -398,11 +417,11 @@ internal object PaperMinimalTheme : JarvisThemeModule {
             Column(Modifier.fillMaxSize()) {
                 Column(Modifier.jarvisScreenPadding()) {
                     PageTitle("对话", "在消息下方编辑、撤销或创建分支")
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        TextAction("新建对话", cb.onNewConversation)
-                        TextAction("创建分支", { cb.onBranch(null) })
+                    JarvisIconRow(Modifier.fillMaxWidth()) {
+                        JarvisIconAction(Icons.Default.Add, "新建对话", cb.onNewConversation)
+                        JarvisIconAction(Icons.Default.CallSplit, "创建分支", { cb.onBranch(null) })
                         Spacer(Modifier.weight(1f))
-                        TextAction("工具箱", cb.onOpenTools)
+                        JarvisIconAction(Icons.Default.Build, "工具箱", cb.onOpenTools)
                     }
                     Chips(efforts, efforts.indexOf(state.reasoningEffort)) { cb.onReasoningEffortChange(efforts[it]) }
                 }
@@ -447,10 +466,14 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 Spacer(Modifier.height(JarvisSpacing.space2))
                 Text(message.content, color = pal.onSurface, style = JarvisType.bodyBase)
                 if (isLatest) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (state.canEditLatest) TextAction("编辑", cb.onEditLatest)
-                        if (state.canUndoLatest) TextAction("撤销", cb.onUndoLatest)
-                        TextAction("分支", { cb.onBranch(message.id) })
+                    JarvisIconRow {
+                        if (state.canEditLatest) {
+                            JarvisIconAction(Icons.Default.Edit, "编辑最新消息", cb.onEditLatest)
+                        }
+                        if (state.canUndoLatest) {
+                            JarvisIconAction(Icons.Default.Undo, "撤销最新消息", cb.onUndoLatest)
+                        }
+                        JarvisIconAction(Icons.Default.CallSplit, "从这条消息创建分支", { cb.onBranch(message.id) })
                     }
                 }
             }
@@ -469,10 +492,11 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                "发送",
-                color = if (enabled) pal.onPrimary else pal.onSurfaceVariant,
-                style = JarvisType.labelBadge
+            Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = "发送消息",
+                tint = if (enabled) pal.onPrimary else pal.onSurfaceVariant,
+                modifier = Modifier.size(JarvisSize.toolbarIcon)
             )
         }
     }
@@ -516,7 +540,6 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                     }
                     SendButton(enabled = state.draft.isNotBlank() && !state.sending) { cb.onSend(state.draft) }
                 }
-                Spacer(Modifier.height(JarvisSpacing.space2))
                 JarvisDivider()
             }
         }
@@ -530,24 +553,33 @@ internal object PaperMinimalTheme : JarvisThemeModule {
         PaperPage(Modifier.padding(state.contentPadding)) {
             PageTitle("任务", "通过对话创建，收到通知后按规则执行一次。")
             Row(
-                Modifier.fillMaxWidth().padding(top = JarvisSpacing.space3),
-                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)
+                Modifier.fillMaxWidth().padding(top = JarvisSpacing.space2),
+                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)
             ) {
-                StatusBadge(if (state.notificationAccess) "通知已连接" else "通知未授权", if (state.notificationAccess) BadgeTone.ACTIVE else BadgeTone.WARNING)
-                StatusBadge(if (state.accessibilityGranted) "无障碍已连接" else "无障碍未启用", if (state.accessibilityGranted) BadgeTone.ACTIVE else BadgeTone.WARNING)
-                StatusBadge(if (state.runtimeReady) "运行时就绪" else "运行时未就绪", if (state.runtimeReady) BadgeTone.ACTIVE else BadgeTone.WARNING)
+                JarvisGlyphLabel(
+                    Icons.Default.Notifications, if (state.notificationAccess) "已授权" else "未授权",
+                    tone = if (state.notificationAccess) JarvisActionTone.ACCENT else JarvisActionTone.DANGER
+                )
+                JarvisGlyphLabel(
+                    Icons.Default.Accessibility, if (state.accessibilityGranted) "已启用" else "未启用",
+                    tone = if (state.accessibilityGranted) JarvisActionTone.ACCENT else JarvisActionTone.DANGER
+                )
+                JarvisGlyphLabel(
+                    Icons.Default.Memory, if (state.runtimeReady) "已就绪" else "未就绪",
+                    tone = if (state.runtimeReady) JarvisActionTone.ACCENT else JarvisActionTone.DANGER
+                )
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("授权通知", cb.onRequestNotificationAccess)
-                TextAction("开启无障碍", cb.onRequestAccessibility)
-                TextAction("刷新", cb.onRefresh)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.Notifications, "授权通知访问", cb.onRequestNotificationAccess)
+                JarvisIconAction(Icons.Default.Accessibility, "开启无障碍服务", cb.onRequestAccessibility)
+                JarvisIconAction(Icons.Default.Refresh, "刷新任务状态", cb.onRefresh)
             }
             if (state.notice.isNotEmpty()) NoticeLine(state.notice)
             JarvisDivider()
             if (state.creatingRule) {
                 NewRuleForm(state, cb)
             } else {
-                TextAction("新建规则", cb.onCreateRuleStart)
+                JarvisIconRow { JarvisIconAction(Icons.Default.Add, "新建自动化规则", cb.onCreateRuleStart) }
             }
             if (state.rules.isEmpty() && !state.creatingRule) {
                 EmptyStatePanel(
@@ -555,7 +587,7 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                     icon = Icons.Default.Add,
                     modifier = Modifier.fillMaxWidth().heightIn(min = RowHeight * 4),
                     subtitle = "在对话中输入“当哔哩哔哩上有人回复我就立刻回复”或“当 Pixiv 画师发布新作品就立刻下载”，也可以点「新建规则」直接填表。",
-                    action = { TextAction("新建规则", cb.onCreateRuleStart) }
+                    action = { JarvisIconAction(Icons.Default.Add, "新建自动化规则", cb.onCreateRuleStart) }
                 )
             } else {
                 state.rules.forEach { rule -> RuleRow(rule, cb) }
@@ -564,11 +596,15 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 GroupTitle("最近执行")
                 state.recentEvents.take(5).forEach { event ->
                     InfoRow(event.title, event.message) {
-                        StatusBadge(if (event.ok) "成功" else "失败", if (event.ok) BadgeTone.ACTIVE else BadgeTone.ERROR)
+                        JarvisGlyphLabel(
+                            if (event.ok) Icons.Default.CheckCircle else Icons.Default.ErrorOutline,
+                            if (event.ok) "成功" else "失败",
+                            tone = if (event.ok) JarvisActionTone.ACCENT else JarvisActionTone.DANGER
+                        )
                     }
                 }
             }
-            Spacer(Modifier.height(JarvisSpacing.space7))
+            Spacer(Modifier.height(JarvisSpacing.pageVertical))
         }
         val editing = state.rules.firstOrNull { it.id == state.editingRuleId }
         if (editing != null) RuleDialog(editing, state, cb)
@@ -586,11 +622,11 @@ internal object PaperMinimalTheme : JarvisThemeModule {
         val kindLabel = state.ruleDraftKindOptions.firstOrNull { it.key == state.ruleDraftKindKey }?.label.orEmpty()
         JarvisInsetCard(
             modifier = Modifier.fillMaxWidth().padding(vertical = JarvisSpacing.space3),
-            contentPadding = JarvisSpacing.space5,
+            contentPadding = JarvisSpacing.insetCardPadding,
             shape = JarvisShapes.sm
         ) {
             Text("新建自动化", color = pal.onSurface, style = JarvisType.titleBlock)
-            Spacer(Modifier.height(JarvisSpacing.space2))
+            JarvisCardHeaderGap()
             Meta("标题与触发要求都填写后才能提交；画师只在 Pixiv 类型出现。")
             FieldLine("规则名称", state.ruleDraftTitle, cb.onCreateRuleTitleChange, hint = "例如：B 站有人回复就回一句")
             if (state.ruleDraftKindOptions.isNotEmpty()) {
@@ -613,9 +649,9 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 Spacer(Modifier.height(JarvisSpacing.space2))
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("提交", cb.onCreateRuleSubmit, color = pal.primary)
+                JarvisIconAction(Icons.Default.Check, "提交新建自动化", cb.onCreateRuleSubmit, tone = JarvisActionTone.ACCENT)
                 Spacer(Modifier.weight(1f))
-                TextAction("取消", cb.onCreateRuleCancel)
+                JarvisIconAction(Icons.Default.Close, "取消新建自动化", cb.onCreateRuleCancel)
             }
         }
         JarvisDivider()
@@ -630,10 +666,13 @@ internal object PaperMinimalTheme : JarvisThemeModule {
         )
         if (rule.lastResult.isNotEmpty()) Meta("最近结果：" + rule.lastResult)
         rule.readiness?.let { Text("启用前：" + it, color = pal.error, style = JarvisType.bodyMeta) }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextAction("配置", { cb.onConfigureRule(rule.id) })
+        JarvisIconRow(Modifier.fillMaxWidth()) {
+            JarvisIconAction(Icons.Default.Settings, "配置自动化规则", { cb.onConfigureRule(rule.id) })
             Spacer(Modifier.weight(1f))
-            DangerActionLabel("删除", { cb.onDeleteRule(rule.id) })
+            JarvisIconAction(
+                Icons.Default.Delete, "删除自动化规则", { cb.onDeleteRule(rule.id) },
+                tone = JarvisActionTone.DANGER
+            )
         }
         JarvisDivider()
     }
@@ -708,21 +747,26 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                     selected = profile.name == state.selectedWorkspace,
                     onClick = { cb.onSelect(profile.name) }
                 )
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextAction("编辑", { creating = false; editing = profile })
-                    TextAction(if (profile.hasDirectory) "解绑目录" else "绑定目录", {
-                        if (profile.hasDirectory) cb.onClearDirectory(profile.name) else cb.onPickDirectory(profile.name)
-                    })
+                JarvisIconRow(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    JarvisIconAction(Icons.Default.Edit, "编辑工作区", { creating = false; editing = profile })
+                    if (profile.hasDirectory) {
+                        JarvisIconAction(Icons.Default.FolderOff, "解绑目录", { cb.onClearDirectory(profile.name) })
+                    } else {
+                        JarvisIconAction(Icons.Default.FolderOpen, "绑定目录", { cb.onPickDirectory(profile.name) })
+                    }
                     if (profile.archived) {
-                        TextAction("还原", { cb.onUnarchive(profile.name) }, color = pal.primary)
+                        JarvisIconAction(
+                            Icons.Default.Unarchive, "还原工作区", { cb.onUnarchive(profile.name) },
+                            tone = JarvisActionTone.ACCENT
+                        )
                     } else if (profile.name != WorkspaceProfile.DEFAULT_NAME) {
-                        TextAction("归档", { cb.onArchive(profile.name) })
+                        JarvisIconAction(Icons.Default.Archive, "归档工作区", { cb.onArchive(profile.name) })
                     }
                     if (profile.name != WorkspaceProfile.DEFAULT_NAME) {
-                        DangerActionLabel("删除", { cb.onDelete(profile.name) })
+                        JarvisIconAction(
+                            Icons.Default.Delete, "删除工作区", { cb.onDelete(profile.name) },
+                            tone = JarvisActionTone.DANGER
+                        )
                     }
                 }
                 JarvisDivider()
@@ -739,9 +783,17 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 )
                 Spacer(Modifier.height(JarvisSpacing.space2))
                 Meta(if (state.dirReady) "读取权限有效 · 清单只读，不提供改文件入口" else "读取权限失效或未绑定，请重新选择目录")
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    TextAction("选择目录", { cb.onPickDirectory(selected.name) })
-                    if (selected.hasDirectory) TextAction("解除绑定", { cb.onClearDirectory(selected.name) }, color = pal.error)
+                JarvisIconRow(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    JarvisIconAction(
+                        Icons.Default.FolderOpen, "选择工作区目录", { cb.onPickDirectory(selected.name) },
+                        tone = JarvisActionTone.ACCENT
+                    )
+                    if (selected.hasDirectory) {
+                        JarvisIconAction(
+                            Icons.Default.FolderOff, "解除目录绑定", { cb.onClearDirectory(selected.name) },
+                            tone = JarvisActionTone.DANGER
+                        )
+                    }
                 }
                 JarvisDivider()
                 if (state.filesLoading) JarvisLoading("正在读取目录…")
@@ -778,12 +830,12 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 if (renameId == session.id) {
                     FieldLine("重命名对话", renameDraft, { renameDraft = it }, hint = "空白标题会被忽略")
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        TextAction("保存名称", {
+                        JarvisIconAction(Icons.Default.Check, "保存新名称", {
                             cb.onRenameConversation(session.id, renameDraft)
                             renameId = null
-                        }, color = pal.primary)
+                        }, tone = JarvisActionTone.ACCENT)
                         Spacer(Modifier.weight(1f))
-                        TextAction("取消", { renameId = null })
+                        JarvisIconAction(Icons.Default.Close, "取消重命名", { renameId = null })
                     }
                 }
                 if (movingId == session.id) {
@@ -797,18 +849,28 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                         }
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextAction("改名", { renameId = session.id; renameDraft = session.title })
-                    TextAction(if (movingId == session.id) "收起移动" else "移动", { movingId = if (movingId == session.id) null else session.id })
+                JarvisIconRow(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    JarvisIconAction(
+                        Icons.Default.DriveFileRenameOutline, "重命名对话",
+                        { renameId = session.id; renameDraft = session.title }
+                    )
+                    JarvisIconAction(
+                        if (movingId == session.id) Icons.Default.Close else Icons.Default.DriveFileMove,
+                        if (movingId == session.id) "收起移动目标" else "移动到其他工作区",
+                        { movingId = if (movingId == session.id) null else session.id }
+                    )
                     if (archived) {
-                        TextAction("还原", { cb.onUnarchiveConversation(session.id) }, color = pal.primary)
+                        JarvisIconAction(
+                            Icons.Default.Unarchive, "还原对话", { cb.onUnarchiveConversation(session.id) },
+                            tone = JarvisActionTone.ACCENT
+                        )
                     } else {
-                        TextAction("归档", { cb.onArchiveConversation(session.id) })
+                        JarvisIconAction(Icons.Default.Archive, "归档对话", { cb.onArchiveConversation(session.id) })
                     }
-                    DangerActionLabel("删除", { cb.onDeleteConversation(session.id) })
+                    JarvisIconAction(
+                        Icons.Default.Delete, "删除对话", { cb.onDeleteConversation(session.id) },
+                        tone = JarvisActionTone.DANGER
+                    )
                 }
                 JarvisDivider()
             }
@@ -817,7 +879,7 @@ internal object PaperMinimalTheme : JarvisThemeModule {
             Meta(state.globalPersona.ifBlank { "—" })
             Spacer(Modifier.height(JarvisSpacing.space2))
             Meta(state.globalWorldBook.ifBlank { "—" })
-            Spacer(Modifier.height(JarvisSpacing.space7))
+            Spacer(Modifier.height(JarvisSpacing.pageVertical))
         }
         editing?.let { profile ->
             WorkspaceEditor(
@@ -848,7 +910,11 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                     Meta(fileSummary(file))
                 }
                 if (file.previewable) {
-                    TextAction(if (expanded) "收起" else "预览", onToggle, color = pal.primary)
+                    JarvisIconAction(
+                        if (expanded) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                        if (expanded) "收起预览" else "预览文件内容",
+                        onToggle, tone = JarvisActionTone.ACCENT
+                    )
                 }
             }
             if (expanded && file.previewable) {
@@ -992,13 +1058,19 @@ internal object PaperMinimalTheme : JarvisThemeModule {
             Spacer(Modifier.height(JarvisSpacing.space2))
             IntChips(state.hideSecondChoices, state.avatarHideSeconds, " 秒", cb.onAvatarHideSecondsChange)
             Spacer(Modifier.height(JarvisSpacing.space3))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                StatusBadge(if (state.overlayGranted) "悬浮窗已授权" else "悬浮窗未授权", if (state.overlayGranted) BadgeTone.ACTIVE else BadgeTone.WARNING)
-                StatusBadge(if (state.accessibilityGranted) "无障碍已连接" else "无障碍未启用", if (state.accessibilityGranted) BadgeTone.ACTIVE else BadgeTone.WARNING)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)) {
+                JarvisGlyphLabel(
+                    Icons.Default.PictureInPicture, if (state.overlayGranted) "已授权" else "未授权",
+                    tone = if (state.overlayGranted) JarvisActionTone.ACCENT else JarvisActionTone.DANGER
+                )
+                JarvisGlyphLabel(
+                    Icons.Default.Accessibility, if (state.accessibilityGranted) "已启用" else "未启用",
+                    tone = if (state.accessibilityGranted) JarvisActionTone.ACCENT else JarvisActionTone.DANGER
+                )
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("悬浮窗权限", cb.onOverlayPermissionRequest)
-                TextAction("无障碍设置", cb.onAccessibilitySettingsOpen)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.PictureInPicture, "请求悬浮窗权限", cb.onOverlayPermissionRequest)
+                JarvisIconAction(Icons.Default.Accessibility, "打开无障碍设置", cb.onAccessibilitySettingsOpen)
             }
             GroupTitle("手势任务")
             if (state.gestureOptions.isNotEmpty()) {
@@ -1031,10 +1103,10 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 color = if (state.pairingCode.isNotEmpty()) pal.primary else pal.onSurfaceVariant,
                 style = if (state.pairingCode.isNotEmpty()) JarvisType.codeInline else JarvisType.bodyMeta
             )
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("生成新配对码", cb.onNewPairingCode)
-                TextAction("复制配对码", cb.onCopyPairingCode)
-                TextAction("撤销配对", cb.onRevokePairing)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.VpnKey, "生成新配对码", cb.onNewPairingCode)
+                JarvisIconAction(Icons.Default.ContentCopy, "复制配对码", cb.onCopyPairingCode)
+                JarvisIconAction(Icons.Default.LinkOff, "撤销配对", cb.onRevokePairing, tone = JarvisActionTone.DANGER)
             }
             SettingSwitchRow("允许远程设备操作", state.remoteDeviceControl, cb.onRemoteDeviceControlChange, subtitle = "关闭时远程端只能对话和整理计划")
             JarvisDivider()
@@ -1043,7 +1115,9 @@ internal object PaperMinimalTheme : JarvisThemeModule {
             } else {
                 Meta("暂未发现局域网或 Tailscale 地址；确认手机已连接网络后刷新。")
             }
-            TextAction("刷新地址", cb.onRefreshRemoteUrls)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.Refresh, "刷新远程访问地址", cb.onRefreshRemoteUrls)
+            }
             GroupTitle("运行时工具")
             Meta("CMake " + (if (state.cmakeReady) "可用" else "缺失") + " · FFmpeg " + (if (state.ffmpegReady) "可用" else "缺失"))
             Spacer(Modifier.height(JarvisSpacing.space3))
@@ -1052,14 +1126,19 @@ internal object PaperMinimalTheme : JarvisThemeModule {
             } else {
                 state.runtimeTools.forEach { tool ->
                     InfoRow(tool.name, if (tool.installed) "已安装 · " + tool.version else "未安装") {
-                        if (!tool.installed) TextAction("安装", { cb.onInstallTool(tool.name) })
+                        if (!tool.installed) {
+                            JarvisIconAction(
+                                Icons.Default.Download, "安装 " + tool.name,
+                                { cb.onInstallTool(tool.name) }, tone = JarvisActionTone.ACCENT
+                            )
+                        }
                     }
                 }
             }
             if (state.toolNotice.isNotEmpty()) NoticeLine(state.toolNotice)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("检查工具", cb.onRefreshTools)
-                TextAction("重新检查运行时", cb.onCheckTools)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.FactCheck, "检查工具安装状态", cb.onRefreshTools)
+                JarvisIconAction(Icons.Default.Refresh, "重新检查运行时", cb.onCheckTools)
             }
             GroupTitle("社区插件")
             if (state.pluginBusy) JarvisLoading("处理中…")
@@ -1068,17 +1147,22 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                     plugin.name + " " + plugin.version, plugin.enabled, { cb.onTogglePlugin(plugin.id, it) },
                     subtitle = "工具：" + plugin.tools.joinToString().ifEmpty { "无" } + " · " + plugin.source
                 )
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.weight(1f))
-                    DangerActionLabel("卸载", { cb.onUninstallPlugin(plugin.id) })
+                JarvisIconRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    JarvisIconAction(
+                        Icons.Default.Delete, "卸载插件", { cb.onUninstallPlugin(plugin.id) },
+                        tone = JarvisActionTone.DANGER
+                    )
                 }
                 JarvisDivider()
             }
             FieldLine("粘贴插件草稿（JSON）", pluginDraft, { pluginDraft = it }, singleLine = false, minLines = 4)
             if (state.pluginNotice.isNotEmpty()) NoticeLine(state.pluginNotice)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("安装草稿", { cb.onInstallPlugin(pluginDraft) })
-                TextAction("刷新插件", cb.onRefreshPlugins)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(
+                    Icons.Default.PlaylistAdd, "安装插件草稿", { cb.onInstallPlugin(pluginDraft) },
+                    tone = JarvisActionTone.ACCENT
+                )
+                JarvisIconAction(Icons.Default.Refresh, "刷新插件列表", cb.onRefreshPlugins)
             }
             GroupTitle("操作记忆")
             Meta(state.memoryStatus.ifEmpty { "首次成功后学习，后续优先复用；失败时重新探索" })
@@ -1087,17 +1171,24 @@ internal object PaperMinimalTheme : JarvisThemeModule {
                 InfoRow(
                     entry.title,
                     (if (entry.ready) "可复用" else "已失效，待重新学习") + " / 成功 " + entry.successes + " 失败 " + entry.failures
-                ) { DangerActionLabel("删除", { cb.onDeleteMemoryEntry(entry.id) }) }
+                ) {
+                    JarvisIconAction(
+                        Icons.Default.Delete, "删除记忆条目", { cb.onDeleteMemoryEntry(entry.id) },
+                        tone = JarvisActionTone.DANGER
+                    )
+                }
             }
-            TextAction("刷新操作路径", cb.onRefreshMemory)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.Refresh, "刷新操作路径", cb.onRefreshMemory)
+            }
             GroupTitle("无障碍")
             SettingSwitchRow("打开 Jarvis 时自动连接", state.accessibilityAutoConnect, cb.onAccessibilityAutoConnectChange, subtitle = "需要 root 完全模式；关闭此项不会撤销已有授权")
             JarvisDivider()
             if (state.accessibilityStatus.isNotEmpty()) Meta(state.accessibilityStatus)
             GroupTitle("AI Classroom 配置同步")
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("导入", cb.onImportAiClassroom)
-                TextAction("导出", cb.onExportAiClassroom)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.FileDownload, "导入 AI Classroom 配置", cb.onImportAiClassroom)
+                JarvisIconAction(Icons.Default.FileUpload, "导出 AI Classroom 配置", cb.onExportAiClassroom)
             }
             if (state.importNotice.isNotEmpty()) NoticeLine(state.importNotice)
             if (state.exportNotice.isNotEmpty()) NoticeLine(state.exportNotice)
@@ -1109,12 +1200,12 @@ internal object PaperMinimalTheme : JarvisThemeModule {
             if (state.applyNotice.isNotEmpty()) {
                 NoticeLine(state.applyNotice, tone = if (state.applyFailed) NoticeTone.ERROR else NoticeTone.SUCCESS)
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("保存并应用", cb.onApply)
-                TextAction("保存并验证", cb.onApplyAndVerify)
+            JarvisIconRow(Modifier.fillMaxWidth()) {
+                JarvisIconAction(Icons.Default.Save, "保存并应用", cb.onApply, tone = JarvisActionTone.ACCENT)
+                JarvisIconAction(Icons.Default.CheckCircle, "保存并验证", cb.onApplyAndVerify, tone = JarvisActionTone.ACCENT)
             }
             Meta("编辑内容自动保存在本机；保存并应用可更新智能体。验证会发起一次简短的主模型请求。")
-            Spacer(Modifier.height(JarvisSpacing.space7))
+            Spacer(Modifier.height(JarvisSpacing.pageVertical))
         }
     }
 
@@ -1132,13 +1223,11 @@ internal object PaperMinimalTheme : JarvisThemeModule {
         Meta("插件目录：" + report.pluginDirectory)
         Meta((if (report.filesReady) "文件已检测到" else "文件缺失") + " · " + (if (report.rootAvailable) "root 已检测到" else "root 缺失") + " · " + (if (report.bridgeTokenReady) "令牌已生成" else "令牌缺失"))
         Spacer(Modifier.height(JarvisSpacing.space2))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextAction("重新检查", cb.onRefreshRuntime)
-            TextAction("启动 Gateway", cb.onStartRuntime)
-            TextAction("停止", cb.onStopRuntime)
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextAction("运行时修复 / Termux 备用方案", cb.onRecovery)
+        JarvisIconRow(Modifier.fillMaxWidth()) {
+            JarvisIconAction(Icons.Default.Refresh, "重新检查运行时", cb.onRefreshRuntime)
+            JarvisIconAction(Icons.Default.PlayArrow, "启动 Gateway", cb.onStartRuntime, tone = JarvisActionTone.ACCENT)
+            JarvisIconAction(Icons.Default.Stop, "停止 Gateway", cb.onStopRuntime)
+            JarvisIconAction(Icons.Default.Handyman, "运行时修复与 Termux 备用方案", cb.onRecovery)
         }
         if (configNotice.isNotEmpty()) NoticeLine(configNotice)
         if (message.isNotEmpty()) NoticeLine(message)

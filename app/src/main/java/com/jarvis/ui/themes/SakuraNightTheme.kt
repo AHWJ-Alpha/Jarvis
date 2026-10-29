@@ -114,7 +114,12 @@ private val SakuraLight = ThemePalette(
 private val sakuraModes = listOf(
     ThemeModeOverride.FOLLOW_SYSTEM, ThemeModeOverride.LIGHT, ThemeModeOverride.DARK
 )
-private val sakuraModeLabels = listOf("跟随系统", "浅色", "深色")
+/** 三档的图标与无障碍说明：档位名不再占横向文字位（原「跟随系统/浅色/深色」chip 行整行删除）。 */
+private val sakuraModeGlyphs: List<Pair<ImageVector, String>> = listOf(
+    Icons.Default.Brightness6 to "明暗跟随系统",
+    Icons.Default.LightMode to "明暗固定浅色",
+    Icons.Default.DarkMode to "明暗固定深色"
+)
 
 /**
  * 樱夜校园：极简顶栏 + 卡片堆叠与大留白，行间用三枚花瓣圆点代替分割线，
@@ -162,11 +167,11 @@ internal class SakuraNightTheme : JarvisThemeModule {
             SakuraHeader("对话", subtitle = "在消息下方编辑、撤销或创建分支",
                 actions = {
                     val index = efforts.indexOf(state.reasoningEffort).coerceAtLeast(0)
-                    SakuraTextAction("思考 " + state.reasoningEffort) {
-                        cb.onReasoningEffortChange(efforts[(index + 1) % efforts.size])
-                    }
-                    SakuraIconAction(Icons.Default.Build, "打开工具箱", cb.onOpenTools)
-                    SakuraIconAction(Icons.Default.Add, "新建对话", cb.onNewConversation)
+                    JarvisIconAction(Icons.Default.Psychology,
+                        "切换思考深度，当前 " + state.reasoningEffort,
+                        onClick = { cb.onReasoningEffortChange(efforts[(index + 1) % efforts.size]) })
+                    JarvisIconAction(Icons.Default.Build, "打开工具箱", cb.onOpenTools)
+                    JarvisIconAction(Icons.Default.Add, "新建对话", cb.onNewConversation)
                 })
             if (state.messages.isEmpty()) {
                 Column(
@@ -183,7 +188,7 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         alignment = Alignment.CenterEnd,
                         modifier = Modifier.fillMaxWidth().height(172.dp).clip(JarvisShapes.xl)
                     )
-                    Spacer(Modifier.height(JarvisSpacing.space6))
+                    Spacer(Modifier.height(JarvisSpacing.space4))
                     Text("让想法，\n开始行动。", style = JarvisType.titleScreen,
                         color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(JarvisSpacing.space2))
@@ -193,8 +198,8 @@ internal class SakuraNightTheme : JarvisThemeModule {
             } else {
                 LazyColumn(state = listState,
                     modifier = Modifier.weight(1f).padding(horizontal = JarvisSpacing.pageHorizontal),
-                    verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space5),
-                    contentPadding = PaddingValues(vertical = JarvisSpacing.space4)) {
+                    verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap),
+                    contentPadding = PaddingValues(vertical = JarvisSpacing.space3)) {
                     itemsIndexed(state.messages, key = { _, message -> message.id }) { index, message ->
                         SakuraMessageCard(message, state, cb)
                         if (index != state.messages.lastIndex) SakuraPetalDivider()
@@ -227,8 +232,8 @@ internal class SakuraNightTheme : JarvisThemeModule {
             SakuraHeader("自动化",
                 subtitle = "通过对话创建，收到通知后按规则执行一次。",
                 actions = {
-                    SakuraIconAction(Icons.Default.Refresh, "刷新自动化", cb.onRefresh)
-                    SakuraIconAction(Icons.Default.Add, "新建规则", cb.onCreateRuleStart)
+                    JarvisIconAction(Icons.Default.Refresh, "刷新自动化", cb.onRefresh)
+                    JarvisIconAction(Icons.Default.Add, "新建规则", cb.onCreateRuleStart)
                 })
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())
                 .padding(horizontal = JarvisSpacing.pageHorizontal),
@@ -238,12 +243,14 @@ internal class SakuraNightTheme : JarvisThemeModule {
                 SakuraCard("运行前检查", "通知访问：" + access + " · 无障碍：" + a11y) {
                     NoticeLine("规则默认暂停；启用后只匹配目标应用通知，并在完成后核实结果。")
                     if (!state.notificationAccess || !state.accessibilityGranted) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
+                        JarvisIconRow(Modifier.heightIn(min = JarvisSize.denseRowHeight)) {
                             if (!state.notificationAccess) {
-                                SakuraTextAction("授权通知") { cb.onRequestNotificationAccess() }
+                                JarvisIconAction(Icons.Default.Notifications, "授权通知访问",
+                                    onClick = { cb.onRequestNotificationAccess() })
                             }
                             if (!state.accessibilityGranted) {
-                                SakuraTextAction("开启无障碍") { cb.onRequestAccessibility() }
+                                JarvisIconAction(Icons.Default.Accessibility, "开启无障碍服务",
+                                    onClick = { cb.onRequestAccessibility() })
                             }
                         }
                     }
@@ -255,7 +262,10 @@ internal class SakuraNightTheme : JarvisThemeModule {
                 if (state.rules.isEmpty() && !state.creatingRule) {
                     EmptyStatePanel("还没有自动化", Modifier.fillMaxWidth(), icon = Icons.Default.Bolt,
                         subtitle = "在对话里说“当哔哩哔哩上有人回复我就立刻回复”，或点下面的按钮直接新建一条。",
-                        action = { SakuraTextAction("新建规则", onClick = cb.onCreateRuleStart) })
+                        action = {
+                            JarvisIconAction(Icons.Default.Add, "新建规则",
+                                onClick = cb.onCreateRuleStart, tone = JarvisActionTone.ACCENT)
+                        })
                 }
                 // 新建草案表单：画师字段只在 Pixiv 类型时出现，校验失败回填 ruleDraftError。
                 if (state.creatingRule) {
@@ -280,11 +290,12 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         if (state.ruleDraftError.isNotBlank()) {
                             NoticeLine(state.ruleDraftError, tone = NoticeTone.ERROR)
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            SakuraTextAction("创建规则", enabled = state.ruleDraftTitle.isNotBlank()) {
-                                cb.onCreateRuleSubmit()
-                            }
-                            SakuraTextAction("取消", onClick = cb.onCreateRuleCancel)
+                        JarvisIconRow(Modifier.heightIn(min = JarvisSize.denseRowHeight)) {
+                            JarvisIconAction(Icons.Default.Check, "创建规则",
+                                onClick = { cb.onCreateRuleSubmit() },
+                                enabled = state.ruleDraftTitle.isNotBlank(),
+                                tone = JarvisActionTone.ACCENT)
+                            JarvisIconAction(Icons.Default.Close, "取消新建", cb.onCreateRuleCancel)
                         }
                     }
                 }
@@ -297,9 +308,11 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         rule.readiness?.let { NoticeLine("启用前：" + it, tone = NoticeTone.ERROR) }
                         if (rule.lastResult.isNotBlank()) NoticeLine("最近结果：" + rule.lastResult)
                         SakuraPetalDivider()
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            SakuraTextAction("配置") { cb.onConfigureRule(rule.id) }
-                            DangerActionLabel("删除", onClick = { cb.onDeleteRule(rule.id) })
+                        JarvisIconRow(Modifier.heightIn(min = JarvisSize.denseRowHeight)) {
+                            JarvisIconAction(Icons.Default.Settings, "配置这条规则",
+                                onClick = { cb.onConfigureRule(rule.id) })
+                            JarvisIconAction(Icons.Default.Delete, "删除这条规则",
+                                onClick = { cb.onDeleteRule(rule.id) }, tone = JarvisActionTone.DANGER)
                         }
                     }
                 }
@@ -315,11 +328,10 @@ internal class SakuraNightTheme : JarvisThemeModule {
                                 "回复风格要求", state.replyDraft, cb.onReplyDraftChange, 2))
                         }
                         NoticeLine("启用前还需要目标应用通知访问和 Jarvis 无障碍服务。")
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            SakuraTextAction("保存") {
-                                cb.onSaveRuleConfig(editing.id, state.artistDraft, state.replyDraft)
-                            }
-                            SakuraTextAction("取消") { cb.onCancelRuleConfig() }
+                        JarvisIconRow(Modifier.heightIn(min = JarvisSize.denseRowHeight)) {
+                            JarvisIconAction(Icons.Default.Check, "保存配置", tone = JarvisActionTone.ACCENT,
+                                onClick = { cb.onSaveRuleConfig(editing.id, state.artistDraft, state.replyDraft) })
+                            JarvisIconAction(Icons.Default.Close, "取消配置", { cb.onCancelRuleConfig() })
                         }
                     }
                 }
@@ -331,7 +343,7 @@ internal class SakuraNightTheme : JarvisThemeModule {
                             tone = if (event.ok) NoticeTone.SUCCESS else NoticeTone.ERROR)
                     }
                 }
-                Spacer(Modifier.height(JarvisSpacing.space7))
+                Spacer(Modifier.height(JarvisSpacing.space4))
             }
             SakuraBottomBar(ctx.shell)
         }
@@ -370,7 +382,10 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         state.archivedWorkspaces.forEach { profile ->
                             ListRow(title = profile.name,
                                 subtitle = "已归档 · 档案与对话都还在",
-                                trailing = ({ SakuraTextAction("还原") { cb.onUnarchive(profile.name) } }))
+                                trailing = ({
+                                    JarvisIconAction(Icons.Default.Unarchive, "还原 " + profile.name,
+                                        onClick = { cb.onUnarchive(profile.name) })
+                                }))
                         }
                     }
                 }
@@ -378,31 +393,45 @@ internal class SakuraNightTheme : JarvisThemeModule {
                     val count = state.conversationCountByWorkspace[profile.name] ?: 0
                     val persona = if (profile.useGlobalPersona) "共同人格与世界书" else "自定义人格与世界书"
                     SakuraCard(profile.name, persona + " · " + count + " 个会话") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            if (profile.name == state.selectedWorkspace) StatusBadge("当前", BadgeTone.ACTIVE)
-                            if (profile.archived) StatusBadge("已归档", BadgeTone.NEUTRAL)
-                        }
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            SakuraTextAction("进入") { cb.onSelect(profile.name) }
-                            SakuraTextAction("编辑") { editing = profile }
-                            if (profile.archived) {
-                                SakuraTextAction("还原") { cb.onUnarchive(profile.name) }
-                            } else if (profile.name != WorkspaceProfile.DEFAULT_NAME) {
-                                SakuraTextAction("归档") { cb.onArchive(profile.name) }
+                        if (profile.name == state.selectedWorkspace || profile.archived) {
+                            JarvisIconRow(Modifier.heightIn(min = JarvisSize.denseRowHeight)) {
+                                if (profile.name == state.selectedWorkspace) {
+                                    JarvisGlyphLabel(Icons.Default.CheckCircle, "当前",
+                                        tone = JarvisActionTone.ACCENT)
+                                }
+                                if (profile.archived) {
+                                    JarvisGlyphLabel(Icons.Default.Archive, "已归档")
+                                }
                             }
-                            DangerActionLabel("删除", onClick = { cb.onDelete(profile.name) })
+                        }
+                        JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                            JarvisIconAction(Icons.Default.Login, "进入 " + profile.name,
+                                onClick = { cb.onSelect(profile.name) }, tone = JarvisActionTone.ACCENT)
+                            JarvisIconAction(Icons.Default.Edit, "编辑 " + profile.name,
+                                onClick = { editing = profile })
+                            if (profile.archived) {
+                                JarvisIconAction(Icons.Default.Unarchive, "还原 " + profile.name,
+                                    onClick = { cb.onUnarchive(profile.name) })
+                            } else if (profile.name != WorkspaceProfile.DEFAULT_NAME) {
+                                JarvisIconAction(Icons.Default.Archive, "归档 " + profile.name,
+                                    onClick = { cb.onArchive(profile.name) })
+                            }
+                            JarvisIconAction(Icons.Default.Delete, "删除 " + profile.name,
+                                onClick = { cb.onDelete(profile.name) }, tone = JarvisActionTone.DANGER)
                         }
                     }
                 }
                 // 目录绑定 + 只读文件清单：排在当前工作区下面，避免每个工作区各挂一份长清单。
                 SakuraCard("目录文件", "当前目录：" + dirLabel) {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        SakuraTextAction(if (hasDir) "更换目录" else "绑定目录") {
-                            cb.onPickDirectory(state.selectedWorkspace)
+                    JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                        JarvisIconAction(
+                            icon = if (hasDir) Icons.Default.FolderOpen else Icons.Default.CreateNewFolder,
+                            contentDescription = if (hasDir) "更换目录" else "绑定目录",
+                            onClick = { cb.onPickDirectory(state.selectedWorkspace) })
+                        if (hasDir) {
+                            JarvisIconAction(Icons.Default.LinkOff, "解绑目录",
+                                onClick = { cb.onClearDirectory(state.selectedWorkspace) })
                         }
-                        if (hasDir) SakuraTextAction("解绑目录") { cb.onClearDirectory(state.selectedWorkspace) }
                     }
                     if (hasDir && !state.dirReady) {
                         NoticeLine("目录读取权限已失效，请重新绑定目录。", tone = NoticeTone.ERROR)
@@ -428,33 +457,39 @@ internal class SakuraNightTheme : JarvisThemeModule {
                             subtitle = session.messages.size.toString() + " 条消息" +
                                 (if (archived) " · 已归档" else ""),
                             trailing = if (archived) ({
-                                StatusBadge("已归档", BadgeTone.NEUTRAL)
+                                JarvisGlyphLabel(Icons.Default.Archive, "已归档")
                             }) else null)
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
-                            SakuraTextAction("改名") {
-                                renamingId = if (renamingId == session.id) null else session.id
-                                renameDraft = session.title
-                            }
-                            SakuraTextAction("移动") {
-                                movingId = if (movingId == session.id) null else session.id
-                            }
+                        JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                            JarvisIconAction(Icons.Default.DriveFileRenameOutline, "给这条对话改名",
+                                onClick = {
+                                    renamingId = if (renamingId == session.id) null else session.id
+                                    renameDraft = session.title
+                                })
+                            JarvisIconAction(Icons.Default.DriveFileMove, "把这条对话移动到别的工作区",
+                                onClick = { movingId = if (movingId == session.id) null else session.id })
                             if (archived) {
-                                SakuraTextAction("还原") { cb.onUnarchiveConversation(session.id) }
+                                JarvisIconAction(Icons.Default.Unarchive, "还原这条对话",
+                                    onClick = { cb.onUnarchiveConversation(session.id) })
                             } else {
-                                SakuraTextAction("归档") { cb.onArchiveConversation(session.id) }
+                                JarvisIconAction(Icons.Default.Archive, "归档这条对话",
+                                    onClick = { cb.onArchiveConversation(session.id) })
                             }
-                            DangerActionLabel("删除", onClick = { cb.onDeleteConversation(session.id) })
+                            JarvisIconAction(Icons.Default.Delete, "删除这条对话",
+                                onClick = { cb.onDeleteConversation(session.id) },
+                                tone = JarvisActionTone.DANGER)
                         }
                         if (renamingId == session.id) {
                             SakuraField(SakuraFieldSpec("新标题", renameDraft, { renameDraft = it }))
-                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                                SakuraTextAction("保存标题", enabled = renameDraft.isNotBlank()) {
-                                    cb.onRenameConversation(session.id, renameDraft.trim())
-                                    renamingId = null
-                                }
-                                SakuraTextAction("取消") { renamingId = null }
+                            JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                                JarvisIconAction(Icons.Default.Check, "保存标题",
+                                    onClick = {
+                                        cb.onRenameConversation(session.id, renameDraft.trim())
+                                        renamingId = null
+                                    },
+                                    enabled = renameDraft.isNotBlank(),
+                                    tone = JarvisActionTone.ACCENT)
+                                JarvisIconAction(Icons.Default.Close, "取消改名",
+                                    onClick = { renamingId = null })
                             }
                         }
                         if (movingId == session.id) {
@@ -475,7 +510,7 @@ internal class SakuraNightTheme : JarvisThemeModule {
                     }
                 }
                 SakuraWorkspaceForm(artwork, editing, state, cb) { editing = null }
-                Spacer(Modifier.height(JarvisSpacing.space7))
+                Spacer(Modifier.height(JarvisSpacing.space4))
             }
             SakuraBottomBar(ctx.shell)
         }
@@ -503,25 +538,29 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         state.themeOptions.indexOfFirst { it.id == state.themeId },
                         { cb.onThemeChangeById(state.themeOptions[it].id) })
                     JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
-                    // 明暗偏好：樱夜 = 夜校灯影，白天校园 = 亮色版本，两套都是本主题手写色板。
-                    ListRow(title = "明暗",
-                        subtitle = "当前渲染：" + (if (state.effectiveMode == ThemeMode.LIGHT) "白天校园" else "樱夜"),
-                        trailing = {
-                            StatusBadge(
-                                if (state.modeOverride == ThemeModeOverride.FOLLOW_SYSTEM) "跟随系统"
-                                else if (state.modeOverride == ThemeModeOverride.LIGHT) "浅色" else "深色",
-                                BadgeTone.NEUTRAL)
-                        })
-                    SakuraChipRow(sakuraModeLabels,
-                        sakuraModes.indexOf(state.modeOverride).coerceAtLeast(0)) { index ->
-                        cb.onModeOverrideChange(sakuraModes[index])
+                    // 明暗偏好：三档直接给三枚图标（跟随/浅/深），当前档用主色，不再占一行文字 chip。
+                    Row(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        JarvisGlyphLabel(Icons.Default.Brightness6, "明暗", modifier = Modifier.weight(1f))
+                        JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                            sakuraModeGlyphs.forEachIndexed { index, (icon, description) ->
+                                JarvisIconAction(icon, description,
+                                    onClick = { cb.onModeOverrideChange(sakuraModes[index]) },
+                                    tone = if (sakuraModes[index] == state.modeOverride) {
+                                        JarvisActionTone.ACCENT
+                                    } else {
+                                        JarvisActionTone.NEUTRAL
+                                    })
+                            }
+                        }
                     }
                     JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     ListRow(title = "版本",
                         subtitle = state.versionName.ifBlank { state.bootstrapReport.runtimeVersion },
                         trailing = {
-                            StatusBadge(runtimeLabel(state.bootstrapReport.state),
-                                runtimeTone(state.bootstrapReport.state))
+                            JarvisGlyphLabel(runtimeIcon(state.bootstrapReport.state),
+                                runtimeLabel(state.bootstrapReport.state),
+                                tone = runtimeActionTone(state.bootstrapReport.state))
                         })
                 }
                 SectionHeader("行为")
@@ -536,36 +575,39 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         subtitle = "开启后由下方档位控制")
                     SakuraChipRow(efforts, efforts.indexOf(state.reasoningEffort).coerceAtLeast(0),
                         { cb.onReasoningEffortChange(efforts[it]) })
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     SakuraField(SakuraFieldSpec("命令前缀", state.commandPrefix, cb.onPrefixChange))
                     SakuraField(SakuraFieldSpec("模型 Base URL", state.modelBaseUrl, cb.onModelBaseUrlChange))
                     SakuraField(SakuraFieldSpec("模型名", state.modelName, cb.onModelNameChange))
-                    SakuraField(SakuraFieldSpec("模型 API Key", state.modelApiKey, cb.onModelApiKeyChange))
+                    SakuraField(SakuraFieldSpec("模型 API Key", state.modelApiKey, cb.onModelApiKeyChange, secret = true))
                     SakuraField(SakuraFieldSpec("模型回退链（每行一个，可选）", state.modelChain,
                         cb.onModelChainChange, 3))
                     SakuraField(SakuraFieldSpec("深度思考模型（可选）", state.deepThinkingModel,
                         cb.onDeepThinkingModelChange))
                     SakuraField(SakuraFieldSpec("识图 Base URL", state.visionBaseUrl, cb.onVisionBaseUrlChange))
                     SakuraField(SakuraFieldSpec("识图模型名", state.visionModel, cb.onVisionModelChange))
-                    SakuraField(SakuraFieldSpec("识图 API Key", state.visionApiKey, cb.onVisionApiKeyChange))
+                    SakuraField(SakuraFieldSpec("识图 API Key", state.visionApiKey, cb.onVisionApiKeyChange, secret = true))
                     SakuraField(SakuraFieldSpec("全局提示词", state.mentorPrompt, cb.onMentorPromptChange, 3))
                     SakuraField(SakuraFieldSpec("全局世界书", state.worldBook, cb.onWorldBookChange, 3))
                     if (state.importNotice.isNotBlank()) NoticeLine(state.importNotice, tone = NoticeTone.SUCCESS)
                     if (state.exportNotice.isNotBlank()) NoticeLine(state.exportNotice)
-                    Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        SakuraTextAction("导入") { cb.onImportAiClassroom() }
-                        SakuraTextAction("导出") { cb.onExportAiClassroom() }
+                    JarvisIconRow(Modifier.heightIn(min = JarvisSize.denseRowHeight)) {
+                        JarvisIconAction(Icons.Default.FileDownload, "导入 AI Classroom 数据",
+                            onClick = { cb.onImportAiClassroom() })
+                        JarvisIconAction(Icons.Default.FileUpload, "导出 AI Classroom 数据",
+                            onClick = { cb.onExportAiClassroom() })
                     }
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     if (state.applyNotice.isNotBlank()) {
                         NoticeLine(state.applyNotice,
                             tone = if (state.applyFailed) NoticeTone.ERROR else NoticeTone.SUCCESS)
                     }
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
+                    JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
                         if (state.saving) JarvisLoading("应用中…")
-                        SakuraTextAction("保存并生效") { cb.onApply() }
-                        SakuraTextAction("保存并验证主模型") { cb.onApplyAndVerify() }
+                        JarvisIconAction(Icons.Default.Save, "保存并生效",
+                            onClick = { cb.onApply() }, tone = JarvisActionTone.ACCENT)
+                        JarvisIconAction(Icons.Default.CheckCircle, "保存并验证主模型",
+                            onClick = { cb.onApplyAndVerify() })
                     }
                 }
                 SectionHeader("安全")
@@ -574,7 +616,9 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         val current = mode.key == state.rootModeKey
                         ListRow(title = mode.label,
                             subtitle = if (current) "当前：" + mode.label else "完全模式会在启用前显示三秒警告",
-                            trailing = if (current) null else ({ StatusBadge("切换", BadgeTone.NEUTRAL) }),
+                            trailing = if (current) null else ({
+                                JarvisGlyphLabel(Icons.Default.ChevronRight, "切换")
+                            }),
                             onClick = { cb.onRootModeRequest(mode) })
                         JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     }
@@ -584,11 +628,13 @@ internal class SakuraNightTheme : JarvisThemeModule {
                             (if (report.bridgeTokenReady) "已生成" else "缺失"))
                     ListRow(title = "插件目录", subtitle = report.pluginDirectory)
                     if (state.runtimeMessage.isNotBlank()) NoticeLine(state.runtimeMessage)
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        SakuraTextAction("启动 Gateway") { cb.onStartRuntime() }
-                        SakuraTextAction("停止") { cb.onStopRuntime() }
-                        SakuraTextAction("重新检查") { cb.onRefreshRuntime() }
+                    JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                        JarvisIconAction(Icons.Default.PlayArrow, "启动 Gateway",
+                            onClick = { cb.onStartRuntime() }, tone = JarvisActionTone.ACCENT)
+                        JarvisIconAction(Icons.Default.Stop, "停止 Gateway",
+                            onClick = { cb.onStopRuntime() })
+                        JarvisIconAction(Icons.Default.Refresh, "重新检查运行时",
+                            onClick = { cb.onRefreshRuntime() })
                     }
                     JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     SettingSwitchRow("启用悬浮球", state.floatingEnabled, cb.onFloatingEnabledChange,
@@ -596,10 +642,11 @@ internal class SakuraNightTheme : JarvisThemeModule {
                     val overlay = if (state.overlayGranted) "已授权" else "未授权"
                     val a11y = if (state.accessibilityGranted) "已启用" else "未启用"
                     NoticeLine("悬浮窗：" + overlay + " · 无障碍：" + a11y)
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        SakuraTextAction("悬浮窗权限") { cb.onOverlayPermissionRequest() }
-                        SakuraTextAction("无障碍设置") { cb.onAccessibilitySettingsOpen() }
+                    JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                        JarvisIconAction(Icons.Default.PictureInPicture, "悬浮窗权限",
+                            onClick = { cb.onOverlayPermissionRequest() })
+                        JarvisIconAction(Icons.Default.Accessibility, "无障碍设置",
+                            onClick = { cb.onAccessibilitySettingsOpen() })
                     }
                     SettingSwitchRow("打开 Jarvis 时自动连接", state.accessibilityAutoConnect,
                         cb.onAccessibilityAutoConnectChange, subtitle = "需要 root 完全模式；关闭不会撤销已有授权")
@@ -607,7 +654,8 @@ internal class SakuraNightTheme : JarvisThemeModule {
                 SectionHeader("浮窗与手势")
                 JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     ListRow(title = "头像边长", subtitle = state.avatarSizeDp.toString() + " dp",
-                        trailing = { StatusBadge("当前", BadgeTone.NEUTRAL) })
+                        trailing = { JarvisGlyphLabel(Icons.Default.CheckCircle, "当前",
+                            tone = JarvisActionTone.ACCENT) })
                     SakuraChipRow(state.avatarSizeChoices.map { it.toString() + "dp" },
                         state.avatarSizeChoices.indexOf(state.avatarSizeDp),
                         { cb.onAvatarSizeChange(state.avatarSizeChoices[it]) })
@@ -630,7 +678,7 @@ internal class SakuraNightTheme : JarvisThemeModule {
                     SakuraChipRow(state.hideSecondChoices.map { it.toString() + "秒" },
                         state.hideSecondChoices.indexOf(state.avatarHideSeconds),
                         { cb.onAvatarHideSecondsChange(state.hideSecondChoices[it]) })
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     if (state.gestureOptions.isNotEmpty()) {
                         ListRow(title = "双击操作",
                             subtitle = state.gestureOptions.firstOrNull { it.key == state.doubleGestureKey }?.label
@@ -645,7 +693,7 @@ internal class SakuraNightTheme : JarvisThemeModule {
                             cb.onSelectAutomationForGesture(state.doubleGestureKey, rule.id)
                         }
                     }
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     if (state.gestureOptions.isNotEmpty()) {
                         ListRow(title = "三击操作",
                             subtitle = state.gestureOptions.firstOrNull { it.key == state.tripleGestureKey }?.label
@@ -668,16 +716,18 @@ internal class SakuraNightTheme : JarvisThemeModule {
                         subtitle = "默认关闭；只允许已配对的浏览器提交任务")
                     if (state.pairingCode.isNotBlank()) {
                         NoticeLine("一次性配对码：" + state.pairingCode, tone = NoticeTone.SUCCESS)
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            SakuraTextAction("复制") { cb.onCopyPairingCode() }
-                            SakuraTextAction("撤销配对") { cb.onRevokePairing() }
+                        JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                            JarvisIconAction(Icons.Default.ContentCopy, "复制配对码",
+                                onClick = { cb.onCopyPairingCode() })
+                            JarvisIconAction(Icons.Default.LinkOff, "撤销配对",
+                                onClick = { cb.onRevokePairing() }, tone = JarvisActionTone.DANGER)
                         }
                     }
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                        SakuraTextAction("生成配对码") { cb.onNewPairingCode() }
-                        SakuraTextAction("刷新地址") { cb.onRefreshRemoteUrls() }
+                    JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+                        JarvisIconAction(Icons.Default.QrCode2, "生成配对码",
+                            onClick = { cb.onNewPairingCode() }, tone = JarvisActionTone.ACCENT)
+                        JarvisIconAction(Icons.Default.Refresh, "刷新地址",
+                            onClick = { cb.onRefreshRemoteUrls() })
                     }
                     state.remoteUrls.forEach { NoticeLine(it) }
                     SettingSwitchRow("允许远程设备调用本机能力", state.remoteDeviceControl,
@@ -688,7 +738,8 @@ internal class SakuraNightTheme : JarvisThemeModule {
                     if (state.checkingTools) {
                         JarvisLoading("正在检查工具路径")
                     } else {
-                        SakuraTextAction("重新检查工具") { cb.onRefreshTools() }
+                        JarvisIconAction(Icons.Default.Refresh, "重新检查工具路径",
+                            onClick = { cb.onRefreshTools() })
                     }
                     NoticeLine("CMake：" + (if (state.cmakeReady) "可用" else "缺失") + " · FFmpeg：" +
                         (if (state.ffmpegReady) "可用" else "缺失"))
@@ -704,47 +755,58 @@ internal class SakuraNightTheme : JarvisThemeModule {
                                 subtitle + " · " + source
                             },
                             trailing = if (tool.installed) null else ({
-                                SakuraTextAction("安装") { cb.onInstallTool(detail?.id ?: tool.name) }
+                                JarvisIconAction(Icons.Default.Download, "安装 " + tool.name,
+                                    onClick = { cb.onInstallTool(detail?.id ?: tool.name) })
                             })
                         )
                     }
                     if (state.toolNotice.isNotBlank()) NoticeLine(state.toolNotice)
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     ListRow(title = "社区插件", subtitle = state.plugins.size.toString() + " 个已安装",
                         trailing = {
                             if (state.pluginBusy) {
                                 JarvisLoading("处理中")
                             } else {
-                                SakuraTextAction("刷新") { cb.onRefreshPlugins() }
+                                JarvisIconAction(Icons.Default.Refresh, "刷新插件列表",
+                                    onClick = { cb.onRefreshPlugins() })
                             }
                         })
                     state.plugins.forEach { plugin ->
                         SettingSwitchRow(title = plugin.name, checked = plugin.enabled,
                             subtitle = plugin.version + " · " + plugin.tools.size.toString() + " 个工具",
                             onCheckedChange = { enabled -> cb.onTogglePlugin(plugin.id, enabled) })
-                        DangerActionLabel("卸载 " + plugin.name, onClick = { cb.onUninstallPlugin(plugin.id) })
+                        JarvisIconAction(Icons.Default.Delete, "卸载 " + plugin.name,
+                            onClick = { cb.onUninstallPlugin(plugin.id) }, tone = JarvisActionTone.DANGER)
                     }
                     if (state.pluginNotice.isNotBlank()) NoticeLine(state.pluginNotice)
                     SakuraField(SakuraFieldSpec("粘贴插件草稿（JSON 或清单文本）", pluginDraft,
                         { pluginDraft = it }, 3))
-                    SakuraTextAction("安装插件", enabled = pluginDraft.isNotBlank()) {
-                        cb.onInstallPlugin(pluginDraft)
-                        pluginDraft = ""
-                    }
-                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space3))
+                    JarvisIconAction(Icons.Default.Extension, "安装插件",
+                        onClick = {
+                            cb.onInstallPlugin(pluginDraft)
+                            pluginDraft = ""
+                        },
+                        enabled = pluginDraft.isNotBlank(),
+                        tone = JarvisActionTone.ACCENT)
+                    JarvisDivider(Modifier.padding(vertical = JarvisSpacing.space2))
                     ListRow(title = "操作记忆",
                         subtitle = state.memoryStatus.ifBlank { "首次成功后学习，后续优先复用" },
-                        trailing = { SakuraTextAction("刷新") { cb.onRefreshMemory() } })
+                        trailing = {
+                            JarvisIconAction(Icons.Default.Refresh, "刷新操作记忆",
+                                onClick = { cb.onRefreshMemory() })
+                        })
                     state.memoryEntries.forEach { entry ->
                         ListRow(title = entry.title,
                             subtitle = (if (entry.ready) "可复用" else "已失效") + " · 成功 " +
                                 entry.successes.toString() + " / 失败 " + entry.failures.toString(),
                             trailing = {
-                                DangerActionLabel("删除", onClick = { cb.onDeleteMemoryEntry(entry.id) })
+                                JarvisIconAction(Icons.Default.Delete, "删除这条操作记忆",
+                                    onClick = { cb.onDeleteMemoryEntry(entry.id) },
+                                    tone = JarvisActionTone.DANGER)
                             })
                     }
                 }
-                Spacer(Modifier.height(JarvisSpacing.space7))
+                Spacer(Modifier.height(JarvisSpacing.space4))
             }
             SakuraBottomBar(ctx.shell)
         }
@@ -761,14 +823,14 @@ private fun SakuraHeader(
     val scheme = MaterialTheme.colorScheme
     Column(
         Modifier.fillMaxWidth()
-            .padding(horizontal = JarvisSpacing.pageHorizontal, vertical = JarvisSpacing.space4)
+            .padding(horizontal = JarvisSpacing.pageHorizontal, vertical = JarvisSpacing.space3)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = JarvisType.titleScreen, color = scheme.onSurface,
                 modifier = Modifier.weight(1f))
             if (actions != null) {
-                Spacer(Modifier.width(JarvisSpacing.space3))
-                Row(verticalAlignment = Alignment.CenterVertically, content = actions)
+                Spacer(Modifier.width(JarvisSpacing.space2))
+                JarvisIconRow(actions = actions)
             }
         }
         if (subtitle != null) {
@@ -828,29 +890,14 @@ private data class SakuraFieldSpec(
     val value: String,
     val onChange: (String) -> Unit,
     val minLines: Int = 1,
-    val placeholder: String = ""
+    val placeholder: String = "",
+    val secret: Boolean = false
 )
-
-@Composable
-private fun SakuraIconAction(icon: ImageVector, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(JarvisSize.minTouch)) {
-        Icon(icon, description, modifier = Modifier.size(JarvisSize.toolbarIcon),
-            tint = MaterialTheme.colorScheme.primary)
-    }
-}
-
-@Composable
-private fun SakuraTextAction(text: String, enabled: Boolean = true, onClick: () -> Unit) {
-    TextButton(onClick = onClick, enabled = enabled,
-        modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-        Text(text, style = JarvisType.titleItem)
-    }
-}
 
 /** 花瓣分隔：三枚圆点，代替列表分割线。 */
 @Composable
 private fun SakuraPetalDivider() {
-    Row(Modifier.fillMaxWidth().padding(vertical = JarvisSpacing.space3),
+    Row(Modifier.fillMaxWidth().padding(vertical = JarvisSpacing.space2),
         horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically) {
         repeat(3) { index ->
@@ -868,7 +915,7 @@ private fun SakuraCard(title: String, subtitle: String, content: @Composable Col
         Text(title, style = JarvisType.titleBlock, color = scheme.onSurface)
         Spacer(Modifier.height(JarvisSpacing.space2))
         Text(subtitle, style = JarvisType.bodyMeta, color = scheme.onSurfaceVariant)
-        Spacer(Modifier.height(JarvisSpacing.space5))
+        JarvisCardHeaderGap()
         content()
     }
 }
@@ -890,20 +937,21 @@ private fun SakuraMessageCard(
             Text(if (isUser) "你" else "Jarvis", style = JarvisType.titleItem,
                 color = if (isUser) scheme.secondary else scheme.primary)
         }
-        Spacer(Modifier.height(JarvisSpacing.space3))
+        JarvisCardHeaderGap()
         Text(message.content, style = JarvisType.bodyBase, color = scheme.onSurface)
-        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
-            SakuraTextAction("分支", enabled = !state.sending) { cb.onBranch(message.id) }
+        JarvisIconRow(Modifier.fillMaxWidth().heightIn(min = JarvisSize.denseRowHeight)) {
+            JarvisIconAction(Icons.Default.CallSplit, "从这条消息创建分支",
+                onClick = { cb.onBranch(message.id) }, enabled = !state.sending)
             if (isUser && message.id == lastUserId) {
-                SakuraTextAction(
-                    text = if (state.editingLatest) "取消编辑" else "编辑",
-                    enabled = !state.sending && (state.editingLatest || state.canEditLatest)
-                ) {
-                    if (state.editingLatest) cb.onCancelEdit() else cb.onEditLatest()
-                }
+                JarvisIconAction(
+                    icon = if (state.editingLatest) Icons.Default.Close else Icons.Default.Edit,
+                    contentDescription = if (state.editingLatest) "取消编辑" else "编辑这条消息",
+                    onClick = { if (state.editingLatest) cb.onCancelEdit() else cb.onEditLatest() },
+                    enabled = !state.sending && (state.editingLatest || state.canEditLatest))
             }
             if (message.id == state.messages.lastOrNull()?.id) {
-                SakuraTextAction("撤销", enabled = state.canUndoLatest, onClick = cb.onUndoLatest)
+                JarvisIconAction(Icons.Default.Undo, "撤销上一条",
+                    onClick = cb.onUndoLatest, enabled = state.canUndoLatest)
             }
         }
     }
@@ -919,7 +967,7 @@ private fun SakuraComposer(
 ) {
     val scheme = MaterialTheme.colorScheme
     val sendEnabled = !sending && draft.isNotBlank()
-    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space4) {
+    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.insetCardPadding) {
         Row(verticalAlignment = Alignment.Bottom) {
             Box(
                 Modifier.weight(1f)
@@ -946,7 +994,7 @@ private fun SakuraComposer(
                 )
             }
             Spacer(Modifier.width(JarvisSpacing.space2))
-            SakuraIconAction(Icons.Default.Mic, "语音转文字", cb.onVoiceInput)
+            JarvisIconAction(Icons.Default.Mic, "语音转文字", cb.onVoiceInput)
             Box(
                 Modifier.size(JarvisSize.sendButton).clip(JarvisShapes.pill)
                     .background(if (sendEnabled) scheme.primary else scheme.surfaceContainerHigh)
@@ -1016,6 +1064,14 @@ private fun sakuraTabIcon(key: String): ImageVector = when (key) {
 @Composable
 private fun SakuraField(spec: SakuraFieldSpec) {
     val scheme = MaterialTheme.colorScheme
+    if (spec.secret) {
+        JarvisSecretField(
+            label = spec.label, value = spec.value, onValueChange = spec.onChange,
+            labelStyle = JarvisType.titleItem, valueStyle = JarvisType.bodyBase,
+            labelColor = scheme.onSurfaceVariant, valueColor = scheme.onSurface,
+            containerColor = scheme.surfaceContainerHigh, accentColor = scheme.primary)
+        return
+    }
     Column(Modifier.fillMaxWidth().padding(vertical = JarvisSpacing.space2),
         verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
         Text(spec.label, style = JarvisType.titleItem, color = scheme.onSurfaceVariant)
@@ -1053,15 +1109,17 @@ private fun SakuraFileRow(file: WorkspaceFileView, expanded: Boolean, onToggle: 
             title = file.name,
             subtitle = kind + if (file.previewable) " · 可预览" else "",
             trailing = if (file.previewable) ({
-                Text(if (expanded) "收起" else "预览", style = JarvisType.labelBadge,
-                    color = scheme.primary)
+                JarvisIconAction(
+                    icon = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "收起预览" else "预览文件内容",
+                    onClick = onToggle, tone = JarvisActionTone.ACCENT)
             }) else null,
             onClick = if (file.previewable) onToggle else null
         )
         if (expanded && file.previewText.isNotBlank()) {
             JarvisInsetCard(
-                modifier = Modifier.fillMaxWidth().padding(bottom = JarvisSpacing.space3),
-                contentPadding = JarvisSpacing.space4
+                modifier = Modifier.fillMaxWidth().padding(bottom = JarvisSpacing.space2),
+                contentPadding = JarvisSpacing.insetCardPadding
             ) {
                 Text(file.previewText.take(1200), style = JarvisType.codeInline,
                     color = scheme.onSurfaceVariant)
@@ -1092,7 +1150,7 @@ private fun SakuraWorkspaceForm(
             Text(if (initial == null) "新建工作区" else "编辑工作区",
                 style = JarvisType.titleBlock, color = MaterialTheme.colorScheme.onSurface)
         }
-        Spacer(Modifier.height(JarvisSpacing.space3))
+        JarvisCardHeaderGap()
         SakuraField(SakuraFieldSpec("工作区名称", name, { name = it.take(60) }))
         SettingSwitchRow(
             title = "使用共同设定",
@@ -1110,17 +1168,23 @@ private fun SakuraWorkspaceForm(
                 }
             }
         }
-        Spacer(Modifier.height(JarvisSpacing.space3))
-        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-            SakuraTextAction(if (initial == null) "创建并进入" else "保存", enabled = clean.isNotEmpty()) {
-                cb.onSave(
-                    WorkspaceProfile(
-                        name = clean, useGlobalPersona = useGlobal,
-                        mentorPrompt = if (useGlobal) "" else persona.trim(),
-                        worldBook = if (useGlobal) "" else worldBook.trim()),
-                    initial?.name)
+        Spacer(Modifier.height(JarvisSpacing.rowGap))
+        JarvisIconRow(Modifier.heightIn(min = JarvisSize.denseRowHeight)) {
+            JarvisIconAction(Icons.Default.Check,
+                contentDescription = if (initial == null) "创建并进入" else "保存工作区",
+                enabled = clean.isNotEmpty(),
+                tone = JarvisActionTone.ACCENT,
+                onClick = {
+                    cb.onSave(
+                        WorkspaceProfile(
+                            name = clean, useGlobalPersona = useGlobal,
+                            mentorPrompt = if (useGlobal) "" else persona.trim(),
+                            worldBook = if (useGlobal) "" else worldBook.trim()),
+                        initial?.name)
+                })
+            if (initial != null) {
+                JarvisIconAction(Icons.Default.Close, "取消编辑工作区", onClick = onDismiss)
             }
-            if (initial != null) SakuraTextAction("取消", onClick = onDismiss)
         }
     }
 }
@@ -1128,16 +1192,23 @@ private fun SakuraWorkspaceForm(
 private fun runtimeLabel(state: RuntimeState): String = when (state) {
     RuntimeState.READY -> "就绪"
     RuntimeState.RUNNING -> "运行中"
-    RuntimeState.DEGRADED -> "兼容模式"
+    RuntimeState.DEGRADED -> "兼容"
     RuntimeState.NOT_CONFIGURED -> "未配置"
-    RuntimeState.ERROR -> "配置错误"
+    RuntimeState.ERROR -> "出错"
 }
 
-private fun runtimeTone(state: RuntimeState): BadgeTone = when (state) {
-    RuntimeState.READY, RuntimeState.RUNNING -> BadgeTone.ACTIVE
-    RuntimeState.DEGRADED -> BadgeTone.WARNING
-    RuntimeState.ERROR -> BadgeTone.ERROR
-    RuntimeState.NOT_CONFIGURED -> BadgeTone.NEUTRAL
+/** 运行时状态一改用「图标 + 2~4 字」表达，颜色由 [runtimeActionTone] 承担，不再占用整枚文字徽标。 */
+private fun runtimeIcon(state: RuntimeState): ImageVector = when (state) {
+    RuntimeState.READY, RuntimeState.RUNNING -> Icons.Default.CheckCircle
+    RuntimeState.DEGRADED -> Icons.Default.Warning
+    RuntimeState.ERROR -> Icons.Default.Error
+    RuntimeState.NOT_CONFIGURED -> Icons.Default.Info
+}
+
+private fun runtimeActionTone(state: RuntimeState): JarvisActionTone = when (state) {
+    RuntimeState.READY, RuntimeState.RUNNING -> JarvisActionTone.ACCENT
+    RuntimeState.DEGRADED, RuntimeState.ERROR -> JarvisActionTone.DANGER
+    RuntimeState.NOT_CONFIGURED -> JarvisActionTone.NEUTRAL
 }
 
 /** 字节数：-1 表示提供方没给（与 0 字节区分开）。 */

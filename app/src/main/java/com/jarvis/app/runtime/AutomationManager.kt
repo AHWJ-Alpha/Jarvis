@@ -30,12 +30,15 @@ data class AutomationRule(
     val replyInstruction: String = "简短、友好并结合上下文回复，不要重复固定话术。",
     val enabled: Boolean = false,
     val lastResult: String = "",
-    val lastRunAt: Long = 0L
+    val lastRunAt: Long = 0L,
+    /** 规则来自哪个会话；该会话被删除时规则失去上下文，需要暂停。 */
+    val sourceConversationId: String = ""
 ) {
     fun toJson() = JSONObject().put("id", id).put("kind", kind.name).put("title", title)
         .put("sourcePrompt", sourcePrompt).put("artist", artist)
         .put("replyInstruction", replyInstruction).put("enabled", enabled)
         .put("lastResult", lastResult).put("lastRunAt", lastRunAt)
+        .put("sourceConversationId", sourceConversationId)
 
     companion object {
         fun fromJson(json: JSONObject) = AutomationRule(
@@ -43,7 +46,8 @@ data class AutomationRule(
             kind = runCatching { AutomationKind.valueOf(json.optString("kind")) }.getOrDefault(AutomationKind.BILIBILI_REPLY),
             title = json.optString("title"), sourcePrompt = json.optString("sourcePrompt"), artist = json.optString("artist"),
             replyInstruction = json.optString("replyInstruction").ifBlank { "简短、友好并结合上下文回复，不要重复固定话术。" },
-            enabled = json.optBoolean("enabled"), lastResult = json.optString("lastResult"), lastRunAt = json.optLong("lastRunAt")
+            enabled = json.optBoolean("enabled"), lastResult = json.optString("lastResult"), lastRunAt = json.optLong("lastRunAt"),
+            sourceConversationId = json.optString("sourceConversationId")
         )
     }
 }
@@ -63,10 +67,36 @@ class AutomationManager(private val context: Context) {
     private val file = File(context.filesDir, "jarvis/automations.json")
     private val lock = Any()
 
-    fun create(draft: AutomationDraft): AutomationRule = synchronized(lock) {
-        val rule = AutomationRule(UUID.randomUUID().toString(), draft.kind, draft.title, draft.sourcePrompt, artist = draft.artist)
+    fun create(draft: AutomationDraft, sourceConversationId: String = ""): AutomationRule = synchronized(lock) {
+        val rule = AutomationRule(
+            UUID.randomUUID().toString(), draft.kind, draft.title, draft.sourcePrompt,
+            artist = draft.artist, sourceConversationId = sourceConversationId
+        )
         saveRules(readRules() + rule)
         rule
+    }
+
+    /**
+     * 来源会话被删除时暂停依赖该会话上下文的规则：规则正文是用户在那次对话里的要求，
+     * 会话删掉后无法再核对上下文，暂停比继续跑更安全，且暂停状态在任务页可见。
+     * 返回本次被暂停的规则。
+     */
+    fun pauseByConversation(conversationId: String): List<AutomationRule> = synchronized(lock) {
+        val matched = readRules().filter { it.enabled && dependsOnConversation(it, conversationId) }
+        if (matched.isEmpty()) return emptyList()
+        val now = System.currentTimeMillis()
+        val paused = matched.map { it.copy(enabled = false, lastRunAt = now, lastResult = PAUSED_BY_CONVERSATION_DELETE) }
+        saveRules(readRules().map { rule -> paused.firstOrNull { it.id == rule.id } ?: rule })
+        val root = readRoot()
+        val events = root.optJSONArray("events") ?: JSONArray()
+        paused.forEach { rule ->
+            events.put(JSONObject().put("ruleId", rule.id).put("title", rule.title)
+                .put("ok", false).put("message", PAUSED_BY_CONVERSATION_DELETE).put("time", now))
+        }
+        while (events.length() > 100) events.remove(0)
+        root.put("events", events)
+        writeRoot(root)
+        paused
     }
 
     fun list(): List<AutomationRule> = synchronized(lock) { readRules() }
@@ -207,6 +237,11 @@ class AutomationManager(private val context: Context) {
     companion object {
         const val BILIBILI_PACKAGE = "tv.danmaku.bili"
         const val PIXIV_PACKAGE = "jp.pxv.android"
+        const val PAUSED_BY_CONVERSATION_DELETE = "已暂停：来源会话已删除"
+
+        /** 规则是否依赖某个会话作为上下文（该会话被删除时要暂停）。 */
+        fun dependsOnConversation(rule: AutomationRule, conversationId: String): Boolean =
+            conversationId.isNotBlank() && rule.sourceConversationId == conversationId
 
         fun matchesNotification(kind: AutomationKind, packageName: String, body: String, artist: String = ""): Boolean {
             val lowered = body.lowercase()

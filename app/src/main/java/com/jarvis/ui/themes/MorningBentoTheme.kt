@@ -12,10 +12,39 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Unarchive
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +59,7 @@ import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -216,18 +246,18 @@ private fun BentoPair(a: Float = BentoWide, first: @Composable ColumnScope.() ->
         if (maxWidth < BentoStackBelowDp) {
             Column(
                 Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)
+                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)
             ) {
-                JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6, shape = JarvisShapes.sm) { first() }
-                JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6, shape = JarvisShapes.sm) { second() }
+                JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding, shape = JarvisShapes.sm) { first() }
+                JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding, shape = JarvisShapes.sm) { second() }
             }
         } else {
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)
+                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)
             ) {
-                JarvisCard(Modifier.weight(a).fillMaxHeight(), contentPadding = JarvisSpacing.space6, shape = JarvisShapes.sm) { first() }
-                JarvisCard(Modifier.weight(1f - a).fillMaxHeight(), contentPadding = JarvisSpacing.space6, shape = JarvisShapes.sm) { second() }
+                JarvisCard(Modifier.weight(a).fillMaxHeight(), contentPadding = JarvisSpacing.cardPadding, shape = JarvisShapes.sm) { first() }
+                JarvisCard(Modifier.weight(1f - a).fillMaxHeight(), contentPadding = JarvisSpacing.cardPadding, shape = JarvisShapes.sm) { second() }
             }
         }
     }
@@ -250,16 +280,16 @@ private fun BentoPairCard(
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth < BentoStackBelowDp) {
-            JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6, shape = JarvisShapes.sm) {
+            JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding, shape = JarvisShapes.sm) {
                 Column(Modifier.fillMaxWidth()) { info() }
-                Spacer(Modifier.height(JarvisSpacing.space5))
+                Spacer(Modifier.height(JarvisSpacing.rowGap))
                 Column(Modifier.fillMaxWidth()) { ops() }
             }
         } else {
-            JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6, shape = JarvisShapes.sm) {
+            JarvisCard(Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding, shape = JarvisShapes.sm) {
                 Row(
                     Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                    horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)
+                    horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)
                 ) {
                     Column(Modifier.weight(a).fillMaxHeight()) { info() }
                     Column(Modifier.weight(1f - a).fillMaxHeight()) { ops() }
@@ -331,15 +361,50 @@ private fun BentoSwitchLine(subtitle: String, checked: Boolean, onChange: (Boole
 @Composable
 private fun BentoMeta(text: String) = Text(text, style = JarvisType.codeInline, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+/**
+ * 图标动作规格：「动作型」按钮一律只画图标，语义全部落在 contentDescription 上（无障碍不失）；
+ * 危险动作（删除/卸载/解绑）走 [JarvisActionTone.DANGER]，主操作走 ACCENT。
+ */
+private data class BentoAct(
+    val icon: ImageVector,
+    val label: String,
+    val tone: JarvisActionTone = JarvisActionTone.NEUTRAL,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit
+)
+
+/** 图标动作横排：间距 4dp，触达由 [JarvisIconAction] 内嵌的 44dp 方框承担。 */
 @Composable
-private fun BentoActions(vararg actions: Pair<String, () -> Unit>) {
-    Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2), verticalAlignment = Alignment.CenterVertically) {
-        actions.forEach { item ->
-            TextButton(onClick = item.second, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-                Text(item.first, style = JarvisType.labelBadge)
-            }
+private fun BentoIconActions(vararg actions: BentoAct) {
+    JarvisIconRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+        actions.forEach { act ->
+            JarvisIconAction(
+                icon = act.icon, contentDescription = act.label, onClick = act.onClick,
+                enabled = act.enabled, tone = act.tone
+            )
         }
     }
+}
+
+/** 图标 + 极短文字的可点动作：只在「点的是哪一个对象」必须靠文字识别时用（来源标题、规则名、工具名、目标工作区）。 */
+@Composable
+private fun BentoGlyphAction(icon: ImageVector, text: String, onClick: () -> Unit) {
+    Box(
+        Modifier.heightIn(min = JarvisSize.minTouch).clip(JarvisShapes.pill)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = JarvisSpacing.space3),
+        contentAlignment = Alignment.Center
+    ) { JarvisGlyphLabel(icon, text) }
+}
+
+/** 纯状态标记（不可点）：图标 + 颜色即可表达的状态不再写汉字。 */
+@Composable
+private fun BentoStateMark(icon: ImageVector, description: String, active: Boolean) {
+    Icon(
+        imageVector = icon, contentDescription = description,
+        tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(JarvisSize.toolbarIcon)
+    )
 }
 
 /**
@@ -402,7 +467,7 @@ private fun BentoAvatarMark() {
     )
 }
 
-private data class BentoF(val label: String, val value: String, val onChange: (String) -> Unit, val hint: String? = null, val mono: Boolean = true, val lines: Int = 1)
+private data class BentoF(val label: String, val value: String, val onChange: (String) -> Unit, val hint: String? = null, val mono: Boolean = true, val lines: Int = 1, val secret: Boolean = false)
 
 /**
  * 输入框配色：填充底 + 底部一条细线，四边不画外框。OutlinedTextField 的 1dp 圆角外框
@@ -424,8 +489,19 @@ private fun bentoFieldColors() = TextFieldDefaults.colors(
 
 @Composable
 private fun BentoFields(vararg specs: BentoF) {
-    Column(verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)) {
+    Column(verticalArrangement = Arrangement.spacedBy(JarvisSpacing.rowGap)) {
         specs.forEach { spec ->
+            if (spec.secret) {
+                JarvisSecretField(
+                    label = spec.label, value = spec.value, onValueChange = spec.onChange,
+                    hint = spec.hint.orEmpty(),
+                    labelStyle = JarvisType.labelBadge, valueStyle = JarvisType.codeInline,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    valueColor = MaterialTheme.colorScheme.onSurface,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    accentColor = MaterialTheme.colorScheme.primary, showDivider = true)
+                return@forEach
+            }
             TextField(
                 value = spec.value, onValueChange = spec.onChange, modifier = Modifier.fillMaxWidth(),
                 label = { Text(spec.label, style = JarvisType.labelBadge) },
@@ -492,11 +568,12 @@ private fun BentoChat(ctx: ChatUiContext) {
         Column(Modifier.fillMaxSize().weight(1f).jarvisScreenPadding()) {
             BentoHeader("对话", subtitle = "在消息下方编辑、撤销或创建分支", leading = { BentoAvatarMark() },
                 actions = {
-                    TextButton(onClick = cb.onNewConversation, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) { Text("新建", style = JarvisType.labelBadge) }
-                    IconButton(onClick = cb.onOpenTools, modifier = Modifier.size(JarvisSize.minTouch)) {
-                        Icon(Icons.Filled.Build, contentDescription = "工具箱", tint = MaterialTheme.colorScheme.primary)
+                    JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                        JarvisIconAction(Icons.Filled.Add, "新建对话", cb.onNewConversation, tone = JarvisActionTone.ACCENT)
+                        JarvisIconAction(Icons.Filled.Build, "工具箱", cb.onOpenTools, tone = JarvisActionTone.ACCENT)
                     }
-                    StatusBadge(if (s.streaming) "流式" else if (s.sending) "请求中" else "待命",
+                    Spacer(Modifier.width(JarvisSpacing.space3))
+                    StatusBadge(if (s.streaming) "流式" else if (s.sending) "请求" else "待命",
                         if (s.sending) BadgeTone.WARNING else BadgeTone.ACTIVE)
                 })
             BentoGap()
@@ -515,7 +592,7 @@ private fun BentoChat(ctx: ChatUiContext) {
                         }
                     )
                     BentoGap()
-                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                         SectionHeader("从一个小任务开始", action = { StatusBadge("3", BadgeTone.NEUTRAL) })
                         BentoPrompts.forEachIndexed { index, label ->
                             ListRow(title = label, subtitle = BentoPromptText[index]) { cb.onDraftChange(BentoPromptText[index]) }
@@ -524,29 +601,25 @@ private fun BentoChat(ctx: ChatUiContext) {
                 }
             } else {
                 LazyColumn(state = list, modifier = Modifier.fillMaxWidth().weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)) {
+                    verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)) {
                     items(s.messages, key = { it.id }) { message -> BentoBubble(message) }
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space3)) {
-                            TextButton(onClick = { cb.onBranch(s.messages.lastOrNull()?.id) },
-                                modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-                                Text("分支", style = JarvisType.labelBadge)
-                            }
-                            TextButton(onClick = cb.onUndoLatest, enabled = s.canUndoLatest,
-                                modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-                                Text("撤销", style = JarvisType.labelBadge)
-                            }
-                            TextButton(onClick = if (s.editingLatest) cb.onCancelEdit else cb.onEditLatest,
-                                enabled = s.editingLatest || s.canEditLatest,
-                                modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-                                Text(if (s.editingLatest) "取消编辑" else "编辑", style = JarvisType.labelBadge)
-                            }
+                        JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                            JarvisIconAction(Icons.Filled.AccountTree, "从这条消息创建分支",
+                                { cb.onBranch(s.messages.lastOrNull()?.id) })
+                            JarvisIconAction(Icons.Filled.Restore, "撤销最后一条", cb.onUndoLatest,
+                                enabled = s.canUndoLatest)
+                            JarvisIconAction(
+                                if (s.editingLatest) Icons.Filled.Close else Icons.Filled.Edit,
+                                if (s.editingLatest) "取消编辑" else "编辑上一条",
+                                if (s.editingLatest) cb.onCancelEdit else cb.onEditLatest,
+                                enabled = s.editingLatest || s.canEditLatest)
                         }
                     }
                 }
             }
             BentoGap(JarvisSpacing.cardGap)
-            JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+            JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                 TextField(
                     value = s.draft, onValueChange = cb.onDraftChange, modifier = Modifier.fillMaxWidth(),
                     placeholder = {
@@ -560,15 +633,11 @@ private fun BentoChat(ctx: ChatUiContext) {
                 BentoChipRow(efforts, efforts.indexOf(s.reasoningEffort.lowercase()), { cb.onReasoningEffortChange(efforts[it]) })
                 Spacer(Modifier.height(JarvisSpacing.space3))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    BentoMeta("思考 " + s.reasoningEffort)
+                    BentoMeta(s.reasoningEffort)
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = cb.onVoiceInput, enabled = !s.sending && !s.voiceListening,
-                        modifier = Modifier.size(JarvisSize.minTouch)) {
-                        Icon(Icons.Filled.Mic, contentDescription = "语音转文字", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(JarvisSize.toolbarIcon))
-                    }
-                    IconButton(onClick = cb.onOpenTools, modifier = Modifier.size(JarvisSize.minTouch)) {
-                        Icon(Icons.Filled.Build, contentDescription = "打开工具箱", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(JarvisSize.toolbarIcon))
-                    }
+                    JarvisIconAction(Icons.Filled.Mic, "语音转文字", cb.onVoiceInput,
+                        enabled = !s.sending && !s.voiceListening, tone = JarvisActionTone.ACCENT)
+                    JarvisIconAction(Icons.Filled.Build, "打开工具箱", cb.onOpenTools, tone = JarvisActionTone.ACCENT)
                     // 发送键 44dp 实心圆（primaryContainer 底 + onPrimaryContainer 图标），不再是一枚悬空图标。
                     IconButton(onClick = { cb.onSend(s.draft.trim()) }, enabled = !s.sending && s.draft.isNotBlank(),
                         modifier = Modifier.size(JarvisSize.sendButton)
@@ -599,7 +668,7 @@ private fun BentoBubble(message: ChatMessage) {
         Column(
             Modifier.fillMaxWidth(0.88f).clip(shape)
                 .background(if (user) colors.secondaryContainer else colors.primaryContainer)
-                .padding(horizontal = JarvisSpacing.space6, vertical = JarvisSpacing.space5)
+                .padding(horizontal = JarvisSpacing.cardPadding, vertical = JarvisSpacing.insetCardPadding)
         ) {
             Text(message.content, style = JarvisType.bodyBase,
                 color = if (user) colors.onSecondaryContainer else colors.onPrimaryContainer)
@@ -623,14 +692,13 @@ private fun BentoTasks(ctx: TasksUiContext) {
             BentoHeader("自动化", subtitle = "对话创建与表单直填两条路；收到通知后按规则执行一次。", leading = { BentoAvatarMark() },
                 actions = {
                     // 建单态不再挂页头「新建规则」入口：草案卡自带创建/取消，两个入口并存只会互相抢点击。
-                    if (!creating) {
-                        TextButton(onClick = cb.onCreateRuleStart, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-                            Text("新建规则", style = JarvisType.labelBadge)
+                    JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                        if (!creating) {
+                            JarvisIconAction(Icons.Filled.Add, "新建规则", cb.onCreateRuleStart, tone = JarvisActionTone.ACCENT)
                         }
+                        JarvisIconAction(Icons.Filled.Refresh, "刷新规则", cb.onRefresh)
                     }
-                    TextButton(onClick = cb.onRefresh, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-                        Text("刷新", style = JarvisType.labelBadge)
-                    }
+                    Spacer(Modifier.width(JarvisSpacing.space3))
                     StatusBadge(if (s.runtimeReady) "就绪" else "未就绪",
                         if (s.runtimeReady) BadgeTone.ACTIVE else BadgeTone.WARNING)
                 })
@@ -642,25 +710,31 @@ private fun BentoTasks(ctx: TasksUiContext) {
                     first = {
                         BentoHead("通知访问", if (s.notificationAccess) "已授权" else "待授权",
                             if (s.notificationAccess) BadgeTone.ACTIVE else BadgeTone.WARNING)
-                        BentoMeta(if (s.notificationAccess) "notification.access · granted" else "notification.access · missing")
-                        if (!s.notificationAccess) BentoActions("去授权" to cb.onRequestNotificationAccess)
+                        if (!s.notificationAccess) {
+                            BentoIconActions(BentoAct(Icons.Filled.Notifications, "去授权通知访问", JarvisActionTone.ACCENT) {
+                                cb.onRequestNotificationAccess()
+                            })
+                        }
                     },
                     second = {
                         BentoHead("无障碍", if (s.accessibilityGranted) "已连接" else "待连接",
                             if (s.accessibilityGranted) BadgeTone.ACTIVE else BadgeTone.WARNING)
-                        BentoMeta(if (s.accessibilityGranted) "a11y.service · connected" else "a11y.service · offline")
-                        if (!s.accessibilityGranted) BentoActions("开启" to cb.onRequestAccessibility)
+                        if (!s.accessibilityGranted) {
+                            BentoIconActions(BentoAct(Icons.Filled.Accessibility, "开启无障碍服务", JarvisActionTone.ACCENT) {
+                                cb.onRequestAccessibility()
+                            })
+                        }
                     }
                 )
                 // 没有规则时「规则 0 · 最近执行 0」这张摘要卡只剩一句说明，占掉空态 CTA 的位置；
                 // 此时只保留可能存在的操作提示，把视口让给空态。
                 if (s.rules.isNotEmpty()) {
                     BentoGap(JarvisSpacing.cardGap)
-                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("规则 " + s.rules.size + " · 最近执行 " + s.recentEvents.size, Modifier.weight(1f),
                                 style = JarvisType.titleItem, color = MaterialTheme.colorScheme.onSurface)
-                            StatusBadge(if (s.runtimeReady) "可执行" else "先完成授权",
+                            StatusBadge(if (s.runtimeReady) "可执行" else "待授权",
                                 if (s.runtimeReady) BadgeTone.ACTIVE else BadgeTone.WARNING)
                         }
                         NoticeLine("规则默认暂停；启用后只匹配目标应用通知，并在完成后核实结果。")
@@ -673,7 +747,7 @@ private fun BentoTasks(ctx: TasksUiContext) {
                 BentoGap(JarvisSpacing.cardGap)
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)) {
+                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)) {
                 // 草案卡与空态**互斥渲染**：同一时刻只画一个。此前 creatingRule=true 时两者同列，
                 // 空态 CTA 与草案卡争同一个视口，CTA 恰好压在 y≈2033 的折叠线上。
                 if (creating) {
@@ -681,12 +755,20 @@ private fun BentoTasks(ctx: TasksUiContext) {
                 } else if (s.rules.isEmpty()) {
                     EmptyStatePanel(
                         title = "还没有自动化",
-                        subtitle = "点下面的「新建规则」直接填一张草案，或在对话里说“当哔哩哔哩上有人回复我就立刻回复”。",
+                        subtitle = "说一句“当哔哩哔哩上有人回复我就立刻回复”，或在下面直接建一张草案。",
                         icon = Icons.Filled.CheckCircle,
+                        contentPadding = JarvisSpacing.insetCardPadding,
                         modifier = Modifier.fillMaxWidth(),
                         action = {
-                            Button(onClick = cb.onCreateRuleStart, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-                                Text("新建规则", style = JarvisType.titleItem)
+                            Button(
+                                onClick = cb.onCreateRuleStart,
+                                modifier = Modifier.heightIn(min = JarvisSize.denseRowHeight),
+                                contentPadding = PaddingValues(horizontal = JarvisSpacing.cardPadding)
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null,
+                                    modifier = Modifier.size(JarvisSize.toolbarIcon))
+                                Spacer(Modifier.width(JarvisSpacing.space3))
+                                Text("新建", style = JarvisType.titleItem)
                             }
                         }
                     )
@@ -697,20 +779,22 @@ private fun BentoTasks(ctx: TasksUiContext) {
                             a = if (index % 2 == 0) BentoWide else 1f - BentoWide,
                             first = {
                                 Text(rule.title, style = JarvisType.titleItem, color = MaterialTheme.colorScheme.onSurface)
-                                BentoMeta(rule.kindLabel + if (rule.enabled) " · enabled" else " · paused")
+                                BentoMeta(rule.kindLabel)
                                 if (rule.artist.isNotBlank()) BentoMeta("画师 " + rule.artist)
                                 if (rule.lastRunAt > 0) BentoMeta(bentoClock(rule.lastRunAt) + " · " + rule.lastResult)
                                 if (rule.readiness != null) NoticeLine(rule.readiness, tone = NoticeTone.ERROR)
                             },
                             second = {
                                 SettingSwitchRow("启用", rule.enabled, { cb.onToggleRule(rule.id, it) })
-                                BentoActions("配置" to { cb.onConfigureRule(rule.id) })
-                                DangerActionLabel("删除", { cb.onDeleteRule(rule.id) })
+                                BentoIconActions(
+                                    BentoAct(Icons.Filled.Settings, "配置规则") { cb.onConfigureRule(rule.id) },
+                                    BentoAct(Icons.Filled.Delete, "删除规则", JarvisActionTone.DANGER) { cb.onDeleteRule(rule.id) }
+                                )
                             }
                         )
                     }
                     if (s.recentEvents.isNotEmpty()) {
-                        JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                        JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                             SectionHeader("最近执行", action = { StatusBadge(s.recentEvents.size.toString(), BadgeTone.NEUTRAL) })
                             s.recentEvents.take(8).forEach { event ->
                                 Text((if (event.ok) "✓ " else "! ") + event.title + " · " + event.message,
@@ -721,18 +805,20 @@ private fun BentoTasks(ctx: TasksUiContext) {
                     }
                     val configRule = s.rules.firstOrNull { it.id == s.editingRuleId }
                     if (configRule != null) {
-                        JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
-                            SectionHeader("配置 " + configRule.title, action = { StatusBadge("EDIT", BadgeTone.ACTIVE) })
-                            BentoGap(JarvisSpacing.cardGap)
+                        JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
+                            SectionHeader("配置 " + configRule.title)
+                            JarvisCardHeaderGap()
                             NoticeLine("原始要求：" + configRule.sourcePrompt)
                             BentoFields(
                                 BentoF("Pixiv 画师名称或用户 ID", s.artistDraft, cb.onArtistDraftChange),
                                 BentoF("回复风格要求", s.replyDraft, cb.onReplyDraftChange, lines = 3, mono = false)
                             )
-                            BentoGap(JarvisSpacing.cardGap)
-                            BentoActions(
-                                "保存配置" to { cb.onSaveRuleConfig(configRule.id, s.artistDraft, s.replyDraft) },
-                                "取消" to cb.onCancelRuleConfig
+                            JarvisCardHeaderGap()
+                            BentoIconActions(
+                                BentoAct(Icons.Filled.Save, "保存配置", JarvisActionTone.ACCENT) {
+                                    cb.onSaveRuleConfig(configRule.id, s.artistDraft, s.replyDraft)
+                                },
+                                BentoAct(Icons.Filled.Close, "取消配置") { cb.onCancelRuleConfig() }
                             )
                         }
                     }
@@ -760,11 +846,11 @@ private fun BentoRuleDraft(
     kindOptions: List<ChoiceOption>,
     pixiv: Boolean
 ) {
-    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
         SectionHeader("新建自动化", action = {
             StatusBadge(kindOptions.firstOrNull { it.key == s.ruleDraftKindKey }?.label ?: s.ruleDraftKindKey, BadgeTone.ACTIVE)
         })
-        BentoGap(JarvisSpacing.cardGap)
+        JarvisCardHeaderGap()
         BentoFields(BentoF("规则标题", s.ruleDraftTitle, cb.onCreateRuleTitleChange, "例：B 站新回复自动答", mono = false))
         if (kindOptions.isNotEmpty()) {
             BentoChips("规则类型", kindOptions.map { it.label },
@@ -779,8 +865,11 @@ private fun BentoRuleDraft(
             BentoFields(BentoF("Pixiv 画师名 / 用户 ID", s.ruleDraftArtist, cb.onCreateRuleArtistChange, "可留空＝匹配任意画师"))
         }
         if (s.ruleDraftError.isNotBlank()) NoticeLine(s.ruleDraftError, tone = NoticeTone.ERROR)
-        BentoGap(JarvisSpacing.cardGap)
-        BentoActions("创建规则" to cb.onCreateRuleSubmit, "取消" to cb.onCreateRuleCancel)
+        JarvisCardHeaderGap()
+        BentoIconActions(
+            BentoAct(Icons.Filled.Check, "创建规则", JarvisActionTone.ACCENT) { cb.onCreateRuleSubmit() },
+            BentoAct(Icons.Filled.Close, "取消新建") { cb.onCreateRuleCancel() }
+        )
     }
 }
 
@@ -807,23 +896,28 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
             BentoHeader("工作区", subtitle = "归档、目录与对话都在这一页；归档只隐藏，不删任何数据。",
                 leading = { BentoAvatarMark() },
                 actions = {
-                    TextButton(
-                        onClick = { editing = null; creating = true; name = ""; mentor = ""; world = ""; shared = true },
-                        modifier = Modifier.heightIn(min = JarvisSize.minTouch)
-                    ) { Text("新建", style = JarvisType.labelBadge) }
+                    JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                        JarvisIconAction(Icons.Filled.Add, "新建工作区",
+                            { editing = null; creating = true; name = ""; mentor = ""; world = ""; shared = true },
+                            tone = JarvisActionTone.ACCENT)
+                    }
+                    Spacer(Modifier.width(JarvisSpacing.space3))
                     StatusBadge(s.workspaces.size.toString() + " 格", BadgeTone.NEUTRAL)
                 })
             BentoGap()
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)) {
+                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)) {
                 // 归档开关 + 目录绑定：两格只放静态行，不放 Lazy*（宽屏分支走 IntrinsicSize.Min 求高）。
                 BentoPair(
                     first = {
                         BentoHead("归档", if (s.showArchived) "显示中" else "已隐藏", BadgeTone.NEUTRAL)
-                        BentoSwitchLine("显示已归档工作区（" + s.archivedWorkspaces.size + " 个）",
+                        BentoSwitchLine("显示已归档（" + s.archivedWorkspaces.size + " 个）",
                             s.showArchived, cb.onToggleShowArchived)
-                        s.archivedWorkspaces.take(3).forEach { archived ->
-                            BentoActions(("还原 " + archived.name) to { cb.onUnarchive(archived.name) })
+                        JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                            s.archivedWorkspaces.take(3).forEach { archived ->
+                                JarvisIconAction(Icons.Filled.Unarchive, "还原 " + archived.name,
+                                    { cb.onUnarchive(archived.name) })
+                            }
                         }
                     },
                     second = {
@@ -838,10 +932,12 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
                             if (bound && s.dirReady) BadgeTone.ACTIVE else BadgeTone.WARNING
                         )
                         BentoMeta(current?.dirLabel?.ifBlank { "未绑定目录" } ?: "未绑定目录")
-                        BentoActions(
-                            (if (bound) "换目录" else "选目录") to { current?.let { cb.onPickDirectory(it.name) } },
-                            "解绑" to { current?.let { cb.onClearDirectory(it.name) } }
-                        )
+                        JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                            JarvisIconAction(Icons.Filled.FolderOpen, if (bound) "换绑定目录" else "选绑定目录",
+                                { current?.let { cb.onPickDirectory(it.name) } }, enabled = current != null)
+                            JarvisIconAction(Icons.Filled.LinkOff, "解绑目录",
+                                { current?.let { cb.onClearDirectory(it.name) } }, enabled = bound)
+                        }
                     }
                 )
                 s.workspaces.forEachIndexed { index, profile ->
@@ -858,51 +954,56 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
                                 if (profile.useGlobalPersona) "共同设定" else "自定义设定")
                             BentoMeta(if (profile.hasDirectory) "目录 " + profile.dirLabel.ifBlank { "已绑定" } else "未绑定目录")
                             if (profile.archived) BentoMeta("已归档 · 档案与对话都保留")
-                            BentoActions("进入" to { cb.onSelect(profile.name) })
+                            JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                                JarvisIconAction(Icons.AutoMirrored.Filled.Login, "进入 " + profile.name,
+                                    { cb.onSelect(profile.name) }, tone = JarvisActionTone.ACCENT)
+                            }
                         },
-                        // 操作区两行收口：上行「状态徽标 + 编辑」，下行「归档/还原 + 删除」。
-                        // 之前每个动作各占一行，卡虽合并了，中间仍留三段一行高的空档，看着还是散的。
+                        // 操作区**一行收口**：状态用图标+颜色，动作全部图标化，行高即 48dp。
                         ops = {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                StatusBadge(
+                            JarvisIconRow(Modifier.fillMaxWidth(), Arrangement.spacedBy(JarvisSpacing.space2)) {
+                                BentoStateMark(
+                                    when {
+                                        profile.archived -> Icons.Filled.Archive
+                                        active -> Icons.Filled.CheckCircle
+                                        else -> Icons.Filled.Circle
+                                    },
                                     when {
                                         profile.archived -> "已归档"
-                                        active -> "当前"
-                                        else -> "可选"
+                                        active -> "当前工作区"
+                                        else -> "未选中"
                                     },
-                                    if (active) BadgeTone.ACTIVE else BadgeTone.NEUTRAL
+                                    active
                                 )
                                 Spacer(Modifier.weight(1f))
-                                BentoMiniAction("编辑") {
+                                JarvisIconAction(Icons.Filled.Edit, "编辑 " + profile.name, {
                                     editing = profile
                                     creating = false
                                     name = profile.name
                                     mentor = profile.mentorPrompt
                                     world = profile.worldBook
                                     shared = profile.useGlobalPersona
-                                }
-                            }
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2),
-                                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)
-                            ) {
+                                })
                                 // 默认工作区不可归档（外壳拒绝），因此只在非默认工作区给归档入口。
                                 if (profile.name != WorkspaceProfile.DEFAULT_NAME) {
-                                    BentoMiniAction(if (profile.archived) "还原" else "归档") {
-                                        if (profile.archived) cb.onUnarchive(profile.name)
-                                        else cb.onArchive(profile.name)
-                                    }
+                                    JarvisIconAction(
+                                        if (profile.archived) Icons.Filled.Unarchive else Icons.Filled.Archive,
+                                        if (profile.archived) "还原 " + profile.name else "归档 " + profile.name,
+                                        {
+                                            if (profile.archived) cb.onUnarchive(profile.name)
+                                            else cb.onArchive(profile.name)
+                                        })
                                 }
-                                DangerActionLabel("删除", { cb.onDelete(profile.name) })
+                                JarvisIconAction(Icons.Filled.Delete, "删除 " + profile.name,
+                                    { cb.onDelete(profile.name) }, tone = JarvisActionTone.DANGER)
                             }
                         }
                     )
                 }
                 if (editing != null || creating) {
-                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
-                        SectionHeader(if (creating) "新建工作区" else "编辑 " + (editing?.name ?: ""),
-                            action = { StatusBadge(if (creating) "NEW" else "EDIT", BadgeTone.ACTIVE) })
-                        BentoGap(JarvisSpacing.cardGap)
+                    JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
+                        SectionHeader(if (creating) "新建工作区" else "编辑 " + (editing?.name ?: ""))
+                        JarvisCardHeaderGap()
                         BentoFields(
                             BentoF("工作区名称", name,
                                 { if (creating || editing?.name != WorkspaceProfile.DEFAULT_NAME) name = it.take(60) }, mono = false),
@@ -911,48 +1012,44 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
                         )
                         if (s.personaSources.isNotEmpty()) {
                             BentoMeta("从其他对话粘贴")
-                            BentoActions(*s.personaSources.take(3).map { source ->
-                                (source.workspace + " · " + source.title) to {
-                                    mentor = source.mentorPrompt
-                                    world = source.worldBook
+                            JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                                s.personaSources.take(3).forEach { source ->
+                                    BentoGlyphAction(Icons.Filled.ContentPaste, source.title, {
+                                        mentor = source.mentorPrompt
+                                        world = source.worldBook
+                                    })
                                 }
-                            }.toTypedArray())
+                            }
                         }
                         SettingSwitchRow("使用共同设定", shared, { shared = it },
                             subtitle = if (shared) "跟随设置中的全局人格与世界书" else "单独编辑人格与世界书")
-                        BentoGap(JarvisSpacing.cardGap)
+                        JarvisCardHeaderGap()
                         // 保存/取消就在这张编辑卡里：不在编辑或新建态时整张卡都不渲染，
-                        // 页面上因此不会出现「只有『保存到工作区』和一枚保存键」的空卡。
+                        // 页面上因此不会出现「只有保存键」的空卡。
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            BentoMeta(if (name.isBlank()) "填了工作区名称才能保存" else "保存后立即生效")
+                            BentoMeta(if (name.isBlank()) "填了名称才能保存" else "保存后立即生效")
                             Spacer(Modifier.weight(1f))
-                            TextButton(
-                                enabled = name.isNotBlank(),
-                                onClick = {
-                                    val payload = WorkspaceProfile(name.trim(), shared, mentor.trim(), world.trim())
-                                    cb.onSave(payload, if (creating) null else editing?.name)
-                                    editing = null
-                                    creating = false
-                                },
-                                modifier = Modifier.heightIn(min = JarvisSize.minTouch)
-                            ) { Text(if (creating) "创建" else "保存", style = JarvisType.labelBadge) }
-                            TextButton(
-                                onClick = { editing = null; creating = false },
-                                modifier = Modifier.heightIn(min = JarvisSize.minTouch)
-                            ) { Text("取消", style = JarvisType.labelBadge) }
+                            JarvisIconAction(Icons.Filled.Save, if (creating) "创建工作区" else "保存工作区", {
+                                val payload = WorkspaceProfile(name.trim(), shared, mentor.trim(), world.trim())
+                                cb.onSave(payload, if (creating) null else editing?.name)
+                                editing = null
+                                creating = false
+                            }, enabled = name.isNotBlank(), tone = JarvisActionTone.ACCENT)
+                            JarvisIconAction(Icons.Filled.Close, "取消编辑",
+                                { editing = null; creating = false })
                         }
                     }
                 }
                 // 目录文件：只读视图。previewable 的行整行可点，展开显示外壳已读好的 previewText。
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("目录文件", Modifier.weight(1f), style = JarvisType.titleItem,
                             color = MaterialTheme.colorScheme.onSurface)
                         StatusBadge(s.files.size.toString() + " 项", BadgeTone.NEUTRAL)
                     }
                     BentoMeta(
-                        if (s.dirReady) "读取权限有效 · 只读清单，本轮没有任何写文件动作"
-                        else "未绑定或权限已失效，先用上面的「选目录」重新绑定"
+                        if (s.dirReady) "只读清单，本轮不写文件"
+                        else "未绑定或权限已失效，先用上面的目录图标重新绑定"
                     )
                     if (s.filesLoading) JarvisLoading("正在读取目录…")
                     if (s.filesNotice.isNotBlank()) NoticeLine(s.filesNotice)
@@ -989,13 +1086,13 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
                     }
                 }
                 // 对话：每条都带改名 / 移动 / 归档（或还原）/ 删除入口，改名与移动在行内展开。
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("对话 " + s.conversations.size, Modifier.weight(1f), style = JarvisType.titleItem,
                             color = MaterialTheme.colorScheme.onSurface)
                         StatusBadge("归档 " + s.archivedConversationIds.size, BadgeTone.NEUTRAL)
                     }
-                    BentoMeta("改名、移动、归档、删除都在每条对话下面；归档只隐藏，消息完整保留。")
+                    BentoMeta("改名、移动、归档在每条对话下面；归档只隐藏，消息完整保留。")
                     if (s.conversations.isEmpty()) {
                         BentoGap(JarvisSpacing.space3)
                         BentoMeta("当前工作区没有对话。")
@@ -1014,27 +1111,26 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
                             )
                             BentoMeta(conversation.workspace + if (archived) " · 已归档" else "")
                         }
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2),
-                            verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)
-                        ) {
-                            BentoMiniAction(if (renamingId == conversation.id) "收起改名" else "改名") {
-                                renamingId = if (renamingId == conversation.id) null else conversation.id
-                                renameText = conversation.title
-                            }
-                            BentoMiniAction(if (movingId == conversation.id) "收起移动" else "移动") {
-                                movingId = if (movingId == conversation.id) null else conversation.id
-                            }
-                            BentoMiniAction(if (archived) "还原" else "归档") {
-                                if (archived) cb.onUnarchiveConversation(conversation.id)
-                                else cb.onArchiveConversation(conversation.id)
-                            }
-                            TextButton(
-                                onClick = { cb.onDeleteConversation(conversation.id) },
-                                modifier = Modifier.heightIn(min = JarvisSize.minTouch)
-                            ) {
-                                Text("删除", style = JarvisType.labelBadge, color = MaterialTheme.colorScheme.error)
-                            }
+                        JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                            JarvisIconAction(
+                                if (renamingId == conversation.id) Icons.Filled.Close else Icons.Filled.Edit,
+                                if (renamingId == conversation.id) "收起改名" else "改名", {
+                                    renamingId = if (renamingId == conversation.id) null else conversation.id
+                                    renameText = conversation.title
+                                })
+                            JarvisIconAction(
+                                if (movingId == conversation.id) Icons.Filled.Close else Icons.AutoMirrored.Filled.DriveFileMove,
+                                if (movingId == conversation.id) "收起移动" else "移动", {
+                                    movingId = if (movingId == conversation.id) null else conversation.id
+                                })
+                            JarvisIconAction(
+                                if (archived) Icons.Filled.Unarchive else Icons.Filled.Archive,
+                                if (archived) "还原对话" else "归档对话", {
+                                    if (archived) cb.onUnarchiveConversation(conversation.id)
+                                    else cb.onArchiveConversation(conversation.id)
+                                })
+                            JarvisIconAction(Icons.Filled.Delete, "删除对话",
+                                { cb.onDeleteConversation(conversation.id) }, tone = JarvisActionTone.DANGER)
                         }
                         if (renamingId == conversation.id) {
                             TextField(
@@ -1044,19 +1140,21 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
                                 singleLine = true, textStyle = JarvisType.bodyBase,
                                 shape = JarvisShapes.sm, colors = bentoFieldColors()
                             )
-                            BentoMiniAction("保存标题") {
+                            JarvisIconAction(Icons.Filled.Check, "保存标题", {
                                 if (renameText.isNotBlank()) {
                                     cb.onRenameConversation(conversation.id, renameText.trim())
                                     renamingId = null
                                 }
-                            }
+                            }, enabled = renameText.isNotBlank(), tone = JarvisActionTone.ACCENT)
                         }
                         if (movingId == conversation.id) {
                             BentoMeta("移动到工作区")
-                            s.workspaces.filter { it.name != conversation.workspace }.take(4).forEach { target ->
-                                BentoMiniAction("→ " + target.name) {
-                                    cb.onMoveConversation(conversation.id, target.name)
-                                    movingId = null
+                            JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                                s.workspaces.filter { it.name != conversation.workspace }.take(4).forEach { target ->
+                                    BentoGlyphAction(Icons.AutoMirrored.Filled.DriveFileMove, target.name) {
+                                        cb.onMoveConversation(conversation.id, target.name)
+                                        movingId = null
+                                    }
                                 }
                             }
                         }
@@ -1068,14 +1166,6 @@ private fun BentoWorkspace(ctx: WorkspaceUiContext) {
             }
         }
         BentoBar(ctx.shell, 2)
-    }
-}
-
-/** 行内小动作：44dp 触达下限，标签用 labelBadge，避免和正文抢字号。 */
-@Composable
-private fun BentoMiniAction(label: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) {
-        Text(label, style = JarvisType.labelBadge)
     }
 }
 
@@ -1111,12 +1201,15 @@ private fun BentoSettings(ctx: SettingsUiContext) {
             BentoHeader("设置", subtitle = "Jarvis " + s.versionName + " · 模型、权限与设备连接",
                 leading = { BentoAvatarMark() },
                 actions = {
-                    TextButton(onClick = cb.onRefreshRuntime, modifier = Modifier.heightIn(min = JarvisSize.minTouch)) { Text("刷新", style = JarvisType.labelBadge) }
+                    JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                        JarvisIconAction(Icons.Filled.Refresh, "刷新运行时", cb.onRefreshRuntime)
+                    }
+                    Spacer(Modifier.width(JarvisSpacing.space3))
                     StatusBadge(rt.first, rt.second)
                 })
             BentoGap()
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.space5)) {
+                verticalArrangement = Arrangement.spacedBy(JarvisSpacing.cardGap)) {
                 BentoPair(
                     first = {
                         BentoHead("风格与外观", s.themeId.ifBlank { s.theme.label },
@@ -1136,7 +1229,7 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                         }
                     },
                     second = {
-                        BentoHead("限制模式", if (s.restrictionMode) "ON" else "OFF",
+                        BentoHead("限制模式", if (s.restrictionMode) "开" else "关",
                             if (s.restrictionMode) BadgeTone.ACTIVE else BadgeTone.WARNING)
                         BentoSwitchLine("关闭后会持续显示警告状态", s.restrictionMode, cb.onRestrictionChange)
                     }
@@ -1158,34 +1251,34 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                         BentoFields(BentoF("命令前缀", s.commandPrefix, cb.onPrefixChange))
                     }
                 )
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     SectionHeader("模型与识图", action = {
                         StatusBadge(if (s.modelName.isBlank()) "未配置" else s.modelName,
                             if (s.modelName.isBlank()) BadgeTone.WARNING else BadgeTone.ACTIVE)
                     })
-                    BentoGap(JarvisSpacing.cardGap)
+                    JarvisCardHeaderGap()
                     BentoFields(
                         BentoF("Base URL", s.modelBaseUrl, cb.onModelBaseUrlChange, "https://api.openai.com/v1"),
                         BentoF("模型名", s.modelName, cb.onModelNameChange, "gpt-4o-mini"),
-                        BentoF("API Key", s.modelApiKey, cb.onModelApiKeyChange),
+                        BentoF("API Key", s.modelApiKey, cb.onModelApiKeyChange, secret = true),
                         BentoF("模型回退链（每行一个，可选）", s.modelChain, cb.onModelChainChange,
                             "主模型失败时按顺序尝试", lines = 2),
                         BentoF("深度思考模型（可选）", s.deepThinkingModel, cb.onDeepThinkingModelChange, "留空则使用主模型"),
                         BentoF("识图 Base URL", s.visionBaseUrl, cb.onVisionBaseUrlChange, "留空继承主模型"),
                         BentoF("识图模型名", s.visionModel, cb.onVisionModelChange, "gpt-4o-mini"),
-                        BentoF("识图 API Key", s.visionApiKey, cb.onVisionApiKeyChange, "留空继承主模型")
+                        BentoF("识图 API Key", s.visionApiKey, cb.onVisionApiKeyChange, "留空继承主模型", secret = true)
                     )
                     SettingSwitchRow("深度思考", s.deepThinkingEnabled, cb.onDeepThinkingChange,
                         subtitle = "关闭时不发送 reasoning_effort；开启后由下方档位控制")
                     BentoChips("思考深度 " + s.reasoningEffort, efforts,
                         efforts.indexOf(s.reasoningEffort.lowercase()), { cb.onReasoningEffortChange(efforts[it]) })
                 }
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     SectionHeader("远程访问", action = {
                         StatusBadge(if (s.serverRunning) "运行中" else "已停止",
                             if (s.serverRunning) BadgeTone.ACTIVE else BadgeTone.NEUTRAL)
                     })
-                    BentoGap(JarvisSpacing.cardGap)
+                    JarvisCardHeaderGap()
                     if (s.pairingCode.isNotBlank()) {
                         Text(s.pairingCode, style = JarvisType.codeInline, color = MaterialTheme.colorScheme.primary)
                         if (s.pairingExpiresAt > 0) BentoMeta("配对码到期 " + bentoClock(s.pairingExpiresAt))
@@ -1194,8 +1287,14 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                     }
                     s.remoteUrls.forEach { BentoMeta(it) }
                     SettingSwitchRow("允许远程设备调用本机能力", s.remoteDeviceControl, cb.onRemoteDeviceControlChange)
-                    BentoActions("启动" to cb.onStartServer, "停止" to cb.onStopServer, "新配对码" to cb.onNewPairingCode,
-                        "复制" to cb.onCopyPairingCode, "撤销" to cb.onRevokePairing, "刷新地址" to cb.onRefreshRemoteUrls)
+                    BentoIconActions(
+                        BentoAct(Icons.Filled.PlayArrow, "启动远程访问", JarvisActionTone.ACCENT) { cb.onStartServer() },
+                        BentoAct(Icons.Filled.Stop, "停止远程访问") { cb.onStopServer() },
+                        BentoAct(Icons.Filled.Key, "生成新配对码") { cb.onNewPairingCode() },
+                        BentoAct(Icons.Filled.ContentCopy, "复制配对码") { cb.onCopyPairingCode() },
+                        BentoAct(Icons.Filled.LinkOff, "撤销配对") { cb.onRevokePairing() },
+                        BentoAct(Icons.Filled.Refresh, "刷新地址") { cb.onRefreshRemoteUrls() }
+                    )
                 }
                 BentoPair(
                     a = 1f - BentoWide,
@@ -1207,9 +1306,12 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                             BentoMeta(tool.name + " · " + tool.version.ifBlank { if (tool.installed) "已可用" else "未找到" })
                         }
                         s.tools.filter { it.installPackage.isNotBlank() }.take(2).forEach { tool ->
-                            BentoActions(("安装 " + tool.label) to { cb.onInstallTool(tool.id) })
+                            BentoGlyphAction(Icons.Filled.Download, tool.label) { cb.onInstallTool(tool.id) }
                         }
-                        BentoActions("刷新" to cb.onRefreshTools, "重查" to cb.onCheckTools)
+                        BentoIconActions(
+                            BentoAct(Icons.Filled.Refresh, "刷新工具列表") { cb.onRefreshTools() },
+                            BentoAct(Icons.Filled.Search, "重新检查工具") { cb.onCheckTools() }
+                        )
                         if (s.toolNotice.isNotBlank()) NoticeLine(s.toolNotice)
                     },
                     second = {
@@ -1219,17 +1321,18 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                             Text(entry.title, style = JarvisType.titleItem, color = MaterialTheme.colorScheme.onSurface)
                             BentoMeta("成功 " + entry.successes + " · 失败 " + entry.failures +
                                 if (entry.ready) " · 可复用" else " · 需重试")
-                            DangerActionLabel("删除", { cb.onDeleteMemoryEntry(entry.id) })
+                            JarvisIconAction(Icons.Filled.Delete, "删除这条记忆",
+                                { cb.onDeleteMemoryEntry(entry.id) }, tone = JarvisActionTone.DANGER)
                         }
-                        BentoActions("刷新" to cb.onRefreshMemory)
+                        BentoIconActions(BentoAct(Icons.Filled.Refresh, "刷新操作记忆") { cb.onRefreshMemory() })
                     }
                 )
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     SectionHeader("社区插件", action = {
                         StatusBadge(s.plugins.size.toString() + " 个",
                             if (s.pluginBusy) BadgeTone.WARNING else BadgeTone.NEUTRAL)
                     })
-                    BentoGap(JarvisSpacing.cardGap)
+                    JarvisCardHeaderGap()
                     if (s.pluginBusy) JarvisLoading("正在处理插件…")
                     s.plugins.forEach { plugin ->
                         SettingSwitchRow(
@@ -1242,24 +1345,33 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             BentoMeta(plugin.id)
                             Spacer(Modifier.weight(1f))
-                            DangerActionLabel("卸载", { cb.onUninstallPlugin(plugin.id) })
+                            JarvisIconAction(Icons.Filled.DeleteForever, "卸载插件 " + plugin.name,
+                                { cb.onUninstallPlugin(plugin.id) }, tone = JarvisActionTone.DANGER)
                         }
                     }
                     BentoGap(JarvisSpacing.cardGap)
                     BentoFields(BentoF("粘贴插件草稿", pluginDraft, { pluginDraft = it }, "把插件清单/草稿文本粘贴到这里再安装", lines = 4))
-                    BentoActions("安装" to { if (pluginDraft.isNotBlank()) cb.onInstallPlugin(pluginDraft) },
-                        "刷新" to cb.onRefreshPlugins)
+                    BentoIconActions(
+                        BentoAct(Icons.Filled.Upload, "安装插件", JarvisActionTone.ACCENT, pluginDraft.isNotBlank()) {
+                            cb.onInstallPlugin(pluginDraft)
+                        },
+                        BentoAct(Icons.Filled.Refresh, "刷新插件列表") { cb.onRefreshPlugins() }
+                    )
                     if (s.pluginNotice.isNotBlank()) NoticeLine(s.pluginNotice)
                 }
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     SectionHeader("悬浮球与手势", action = {
-                        StatusBadge(if (s.floatingEnabled) "ON" else "OFF",
+                        StatusBadge(if (s.floatingEnabled) "开" else "关",
                             if (s.floatingEnabled) BadgeTone.ACTIVE else BadgeTone.NEUTRAL)
                     })
-                    BentoGap(JarvisSpacing.cardGap)
+                    JarvisCardHeaderGap()
                     BentoSwitchLine("尺寸 " + s.floatingSizeDp + " dp · 隐藏 " + s.avatarHideSeconds + " 秒",
                         s.floatingEnabled, cb.onFloatingEnabledChange)
-                    if (!s.overlayGranted) BentoActions("请求悬浮窗权限" to cb.onOverlayPermissionRequest)
+                    if (!s.overlayGranted) {
+                        BentoIconActions(BentoAct(Icons.Filled.Layers, "请求悬浮窗权限", JarvisActionTone.ACCENT) {
+                            cb.onOverlayPermissionRequest()
+                        })
+                    }
                     BentoChips("头像边长 " + s.avatarSizeDp + " dp", s.avatarSizeChoices.map { it.toString() },
                         s.avatarSizeChoices.indexOf(s.avatarSizeDp),
                         { cb.onAvatarSizeChange(s.avatarSizeChoices[it]); cb.onFloatingSizeChange(s.avatarSizeChoices[it]) })
@@ -1269,7 +1381,7 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                     BentoChips("隐藏秒数 " + s.avatarHideSeconds, s.hideSecondChoices.map { it.toString() },
                         s.hideSecondChoices.indexOf(s.avatarHideSeconds),
                         { cb.onAvatarHideSecondsChange(s.hideSecondChoices[it]) })
-                    BentoGap(JarvisSpacing.cardGap)
+                    JarvisCardHeaderGap()
                     BentoChips("双击 " + s.doubleGestureKey, s.gestureOptions.map { it.label },
                         s.gestureOptions.indexOfFirst { it.key == s.doubleGestureKey },
                         { cb.onDoubleGestureChange(s.gestureOptions[it].key) })
@@ -1279,30 +1391,37 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                         { cb.onTripleGestureChange(s.gestureOptions[it].key) })
                     BentoFields(BentoF("三击任务文本", s.tripleTask, cb.onTripleTaskChange, mono = false, lines = 2))
                     if (s.savedAutomations.isNotEmpty()) {
-                        BentoActions(*s.savedAutomations.take(2).map { rule ->
-                            ("双击 → " + rule.title) to { cb.onSelectAutomationForGesture("double", rule.id) }
-                        }.toTypedArray())
+                        JarvisIconRow(horizontalArrangement = Arrangement.spacedBy(JarvisSpacing.space2)) {
+                            s.savedAutomations.take(2).forEach { rule ->
+                                BentoGlyphAction(Icons.Filled.PlayArrow, rule.title) {
+                                    cb.onSelectAutomationForGesture("double", rule.id)
+                                }
+                            }
+                        }
                     }
                 }
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     SectionHeader("无障碍与人格", action = {
                         StatusBadge(if (s.accessibilityGranted) "已连接" else "未连接",
                             if (s.accessibilityGranted) BadgeTone.ACTIVE else BadgeTone.WARNING)
                     })
-                    BentoGap(JarvisSpacing.cardGap)
+                    JarvisCardHeaderGap()
                     if (s.accessibilityStatus.isNotBlank()) BentoMeta(s.accessibilityStatus)
                     SettingSwitchRow("打开 Jarvis 时自动连接", s.accessibilityAutoConnect, cb.onAccessibilityAutoConnectChange)
-                    BentoActions("打开无障碍设置" to cb.onAccessibilitySettingsOpen)
-                    BentoGap(JarvisSpacing.cardGap)
+                    BentoIconActions(BentoAct(Icons.Filled.Accessibility, "打开无障碍设置") { cb.onAccessibilitySettingsOpen() })
+                    JarvisCardHeaderGap()
                     BentoFields(
                         BentoF("全局提示词", s.mentorPrompt, cb.onMentorPromptChange, mono = false, lines = 3),
                         BentoF("全局世界书", s.worldBook, cb.onWorldBookChange, mono = false, lines = 3)
                     )
                 }
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     SectionHeader("AI Classroom 与运行时", action = { StatusBadge(rt.first, rt.second) })
-                    BentoGap(JarvisSpacing.cardGap)
-                    BentoActions("导入" to cb.onImportAiClassroom, "导出" to cb.onExportAiClassroom)
+                    JarvisCardHeaderGap()
+                    BentoIconActions(
+                        BentoAct(Icons.Filled.Upload, "导入 AI Classroom") { cb.onImportAiClassroom() },
+                        BentoAct(Icons.Filled.Download, "导出 AI Classroom") { cb.onExportAiClassroom() }
+                    )
                     if (s.importNotice.isNotBlank()) NoticeLine(s.importNotice, tone = NoticeTone.SUCCESS)
                     if (s.exportNotice.isNotBlank()) NoticeLine(s.exportNotice, tone = NoticeTone.SUCCESS)
                     BentoMeta(s.bootstrapReport.runtimeMode.name + " · " + s.bootstrapReport.runtimeVersion)
@@ -1310,10 +1429,14 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                     NoticeLine(s.bootstrapReport.message)
                     if (s.runtimeMessage.isNotBlank()) NoticeLine(s.runtimeMessage)
                     if (s.configNotice.isNotBlank()) NoticeLine(s.configNotice)
-                    BentoActions("刷新" to cb.onRefreshRuntime, "启动" to cb.onStartRuntime,
-                        "停止" to cb.onStopRuntime, "恢复" to cb.onRecovery)
+                    BentoIconActions(
+                        BentoAct(Icons.Filled.Refresh, "刷新运行时") { cb.onRefreshRuntime() },
+                        BentoAct(Icons.Filled.PlayArrow, "启动运行时", JarvisActionTone.ACCENT) { cb.onStartRuntime() },
+                        BentoAct(Icons.Filled.Stop, "停止运行时") { cb.onStopRuntime() },
+                        BentoAct(Icons.Filled.Restore, "恢复运行时") { cb.onRecovery() }
+                    )
                 }
-                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.space6) {
+                JarvisCard(modifier = Modifier.fillMaxWidth(), contentPadding = JarvisSpacing.cardPadding) {
                     SectionHeader("保存并应用", action = {
                         StatusBadge(if (s.saving) "保存中" else if (s.applyFailed) "失败" else "就绪",
                             if (s.saving) BadgeTone.WARNING else if (s.applyFailed) BadgeTone.ERROR else BadgeTone.ACTIVE)
@@ -1321,8 +1444,11 @@ private fun BentoSettings(ctx: SettingsUiContext) {
                     if (s.saving) JarvisLoading("正在保存并应用…")
                     if (s.applyNotice.isNotBlank()) NoticeLine(s.applyNotice,
                         tone = if (s.applyFailed) NoticeTone.ERROR else NoticeTone.SUCCESS)
-                    BentoGap(JarvisSpacing.cardGap)
-                    BentoActions("保存" to cb.onApply, "保存并验证" to cb.onApplyAndVerify)
+                    JarvisCardHeaderGap()
+                    BentoIconActions(
+                        BentoAct(Icons.Filled.Save, "保存并应用", JarvisActionTone.ACCENT) { cb.onApply() },
+                        BentoAct(Icons.Filled.Check, "保存并验证") { cb.onApplyAndVerify() }
+                    )
                 }
             }
         }

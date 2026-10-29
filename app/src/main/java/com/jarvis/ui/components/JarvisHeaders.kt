@@ -32,7 +32,7 @@ fun ScreenHeader(
     ) {
         if (leading != null) {
             leading()
-            Spacer(Modifier.width(JarvisSpacing.space4))
+            Spacer(Modifier.width(JarvisSpacing.space3))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -49,7 +49,7 @@ fun ScreenHeader(
             }
         }
         if (actions != null) {
-            Spacer(Modifier.width(JarvisSpacing.space4))
+            Spacer(Modifier.width(JarvisSpacing.space3))
             Row(verticalAlignment = Alignment.CenterVertically, content = actions)
         }
     }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -22,10 +24,10 @@ import com.jarvis.ui.tokens.JarvisSpacing
 import com.jarvis.ui.tokens.JarvisStroke
 import com.jarvis.ui.tokens.jarvisPressScale
 
-/** 屏级统一内边距：左右 pageHorizontal、上下 space5；只调用一次，放在每个屏的根容器上。 */
+/** 屏级统一内边距：左右 [JarvisSpacing.pageHorizontal]、上下 [JarvisSpacing.pageVertical]（20 -> 16dp）；只调用一次，放在每个屏的根容器上。 */
 @Composable
 fun Modifier.jarvisScreenPadding(): Modifier =
-    padding(horizontal = JarvisSpacing.pageHorizontal, vertical = JarvisSpacing.space5)
+    padding(horizontal = JarvisSpacing.pageHorizontal, vertical = JarvisSpacing.pageVertical)
 
 /**
  * 卡片：surface 底 + 圆角（默认 lg，便当类主题可传 sm）；onClick 非空时整卡可点并带按压反馈。
@@ -69,7 +71,7 @@ fun JarvisCard(
 @Composable
 fun JarvisInsetCard(
     modifier: Modifier = Modifier,
-    contentPadding: Dp = JarvisSpacing.space5,
+    contentPadding: Dp = JarvisSpacing.insetCardPadding,
     shape: Shape = JarvisShapes.md,
     border: BorderStroke? = null,
     content: @Composable ColumnScope.() -> Unit
@@ -82,6 +84,15 @@ fun JarvisInsetCard(
             .padding(contentPadding),
         content = content
     )
+}
+
+/**
+ * 卡片头与卡片内容之间的间距：统一走 [JarvisSpacing.rowGap]（12 -> 8dp），
+ * 调用方不要再自己写 12/16dp 字面量，否则「层与层之间空隙太大」会从调用点回潮。
+ */
+@Composable
+fun JarvisCardHeaderGap(modifier: Modifier = Modifier) {
+    Spacer(modifier = modifier.height(JarvisSpacing.rowGap))
 }
 
 /**

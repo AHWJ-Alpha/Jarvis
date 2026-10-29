@@ -15,6 +15,20 @@ class GatewayConfig(private val context: Context) {
     private val configFile = File(runtime, "openclaw-home/openclaw.json")
     private val tokenFile = File(root, "config/gateway.token")
 
+    /** 最近一次同步的回退告警（如"未配置主模型"）；启动结果会把它带给用户，而不是静默降级。 */
+    @Volatile
+    var lastWarning: String? = null
+        private set
+
+    /** 本次同步如何注册识图模型：NONE 未配置、SHARED 与主模型同源、DEDICATED 独立 provider、UNAVAILABLE 回退失败。 */
+    @Volatile
+    var visionRegistration: VisionRegistration = VisionRegistration.NONE
+        private set
+
+    val visionRegistered: Boolean
+        get() = visionRegistration == VisionRegistration.SHARED ||
+            visionRegistration == VisionRegistration.DEDICATED
+
     fun token(): String {
         tokenFile.parentFile?.mkdirs()
         if (tokenFile.isFile && tokenFile.readText().trim().length >= 32) return tokenFile.readText().trim()
@@ -71,20 +85,40 @@ class GatewayConfig(private val context: Context) {
         // Android exposes app data through both /data/user/0 and /data/data;
         // OpenClaw pins workspace identity and rejects a previously seen alias.
         defaults.put("workspace", File(runtime, "openclaw-home/jarvis-workspace").absolutePath)
-        if (base.isNotBlank() && model.isNotBlank()) {
-            val selected = if (prefs.getBoolean("deepThinkingEnabled", false))
-                prefs.getString("deepThinkingModel", "").orEmpty().ifBlank { model } else model
-            val provider = JSONObject()
-                .put("baseUrl", base)
-                .put("apiKey", key)
-                .put("api", "openai-completions")
-                .put("models", JSONArray().put(JSONObject()
-                    .put("id", selected).put("name", selected)
-                    .put("reasoning", prefs.getBoolean("deepThinkingEnabled", false))
-                    .put("input", JSONArray().put("text"))
-                    .put("contextWindow", 128000).put("maxTokens", 8192)))
-            config.put("models", JSONObject().put("mode", "merge").put("providers", JSONObject().put("jarvis", provider)))
-            defaults.put("model", JSONObject().put("primary", "jarvis/$selected"))
+        val mainTarget = ModelTarget(model, base, key)
+        val mainChoice = ModelFallback.main(model, base, key)
+        val reasoningEnabled = prefs.getBoolean("deepThinkingEnabled", false)
+        val reasonChoice = ModelFallback.reason(mainTarget, prefs.getString("deepThinkingModel", "").orEmpty())
+        val visionChoice = ModelFallback.vision(mainTarget, ModelTarget(
+            prefs.getString("visionModel", "").orEmpty(),
+            prefs.getString("visionBaseUrl", "").orEmpty(),
+            prefs.getString("visionApiKey", "").orEmpty()
+        ))
+        lastWarning = listOf(mainChoice, reasonChoice, visionChoice)
+            .mapNotNull { (it as? ModelChoice.Unavailable)?.error }
+            .distinct()
+            .joinToString("；")
+            .ifBlank { null }
+        if (mainChoice is ModelChoice.Ready) {
+            val target = mainChoice.target
+            // 思考模型只覆盖模型名；留空即回到主模型，绝不拼出空 model 名。
+            val selected = (reasonChoice as? ModelChoice.Ready)?.target?.model ?: target.model
+            val plan = ModelProviders.build(
+                target,
+                selected,
+                reasoningEnabled,
+                (visionChoice as? ModelChoice.Ready)?.target
+            )
+            // 识图模型回退失败的只留告警不注册；否则同源追加、异源并列一个 provider。
+            visionRegistration = if (visionChoice is ModelChoice.Unavailable) {
+                VisionRegistration.UNAVAILABLE
+            } else {
+                plan.vision
+            }
+            config.put("models", JSONObject().put("mode", "merge").put("providers", plan.providers))
+            defaults.put("model", JSONObject().put("primary", ModelProviders.MAIN_PROVIDER + "/" + selected))
+        } else {
+            visionRegistration = VisionRegistration.UNAVAILABLE
         }
         configFile.parentFile?.mkdirs()
         val content = config.toString(2)

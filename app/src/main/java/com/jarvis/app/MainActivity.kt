@@ -40,7 +40,11 @@ import com.jarvis.app.runtime.ManagedOpenClawPlugin
 import com.jarvis.app.runtime.RuntimeToolManager
 import com.jarvis.app.runtime.RuntimeToolStatus
 import com.jarvis.app.runtime.ToolSource
+import com.jarvis.app.runtime.ModelChoice
 import com.jarvis.app.runtime.ModelConnectionChecker
+import com.jarvis.app.runtime.ModelConnectionResult
+import com.jarvis.app.runtime.ModelFallback
+import com.jarvis.app.runtime.ModelTarget
 import com.jarvis.app.runtime.CapabilityResult
 import com.jarvis.app.runtime.OperationHost
 import com.jarvis.app.runtime.OperationMemory
@@ -53,6 +57,7 @@ import com.jarvis.app.runtime.FloatingAssistantPreferences
 import com.jarvis.app.runtime.FloatingShape
 import com.jarvis.app.runtime.FloatingGestureAction
 import com.jarvis.app.runtime.AutomationDraft
+import com.jarvis.app.runtime.AutomationWorker
 import com.jarvis.app.runtime.AutomationManager
 import com.jarvis.app.runtime.AutomationKind
 import com.jarvis.app.runtime.AutomationRule
@@ -177,6 +182,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarvis.ui.components.isMaskedApiKey
+import com.jarvis.ui.components.maskApiKey
 import com.jarvis.ui.shell.JarvisShell
 import com.jarvis.ui.shell.ShellChrome
 import com.jarvis.ui.theme.AutomationRuleView
@@ -307,26 +314,34 @@ private class ConfigStore(context: Context) {
     }
 }
 
-private fun JarvisConfig.toAiClassroomJson(): JSONObject = JSONObject().apply {
-    put("version", 1)
-    put("source", "jarvis")
-    put("config", JSONObject().apply {
-        put("provider", "OpenAI-compatible")
-        put("apiKey", modelApiKey)
-        put("baseUrl", modelBaseUrl)
-        put("selectedModel", modelName)
-        put("customModel", modelName)
-        put("modelChain", modelChain.ifBlank { modelName })
-        put("deepThinkingEnabled", deepThinkingEnabled && normalizeReasoningEffort(reasoningEffort) != "off")
-        put("deepThinkingModel", deepThinkingModel)
-        put("reasoningEffort", normalizeReasoningEffort(reasoningEffort))
-        put("visionProvider", "OpenAI-compatible")
-        put("visionApiKey", visionApiKey)
-        put("visionBaseUrl", visionBaseUrl)
-        put("visionModel", visionModel)
-        put("mentorPrompt", mentorPrompt)
-        put("worldBook", worldBook)
-    })
+private fun JarvisConfig.toAiClassroomJson(): JSONObject {
+    // 导出写"已回退"的识图目标：识图三项留空即等于主模型，导出后不会出现空模型名。
+    val vision = (ModelFallback.vision(
+        ModelTarget(modelName, modelBaseUrl, modelApiKey),
+        ModelTarget(visionModel, visionBaseUrl, visionApiKey)
+    ) as? ModelChoice.Ready)?.target
+    return JSONObject().apply {
+        put("version", 1)
+        put("source", "jarvis")
+        put("config", JSONObject().apply {
+            put("provider", "OpenAI-compatible")
+            // 导出的 JSON 只放掩码：真 Key 只留在本机 prefs，不随文件外流；导入端会忽略掩码值。
+            put("apiKey", maskApiKey(modelApiKey))
+            put("baseUrl", modelBaseUrl)
+            put("selectedModel", modelName)
+            put("customModel", modelName)
+            put("modelChain", modelChain.ifBlank { modelName })
+            put("deepThinkingEnabled", deepThinkingEnabled && normalizeReasoningEffort(reasoningEffort) != "off")
+            put("deepThinkingModel", deepThinkingModel)
+            put("reasoningEffort", normalizeReasoningEffort(reasoningEffort))
+            put("visionProvider", "OpenAI-compatible")
+            put("visionApiKey", maskApiKey(vision?.apiKey ?: visionApiKey))
+            put("visionBaseUrl", vision?.baseUrl ?: visionBaseUrl)
+            put("visionModel", vision?.model ?: visionModel)
+            put("mentorPrompt", mentorPrompt)
+            put("worldBook", worldBook)
+        })
+    }
 }
 
 private fun JSONObject.toJarvisConfig(current: JarvisConfig): JarvisConfig {
@@ -334,6 +349,7 @@ private fun JSONObject.toJarvisConfig(current: JarvisConfig): JarvisConfig {
     val effort = normalizeReasoningEffort(source.optString("reasoningEffort", current.reasoningEffort))
     val deepEnabled = source.optBoolean("deepThinkingEnabled", current.deepThinkingEnabled) && effort != "off"
     val mainKey = source.optString("apiKey", current.modelApiKey)
+        .takeUnless { isMaskedApiKey(it) } ?: current.modelApiKey
     val mainBase = source.optString("baseUrl", current.modelBaseUrl)
     val mainModel = source.optString("selectedModel")
         .ifBlank { source.optString("customModel") }
@@ -346,9 +362,11 @@ private fun JSONObject.toJarvisConfig(current: JarvisConfig): JarvisConfig {
         deepThinkingEnabled = deepEnabled,
         reasoningEffort = if (deepEnabled) effort else "off",
         deepThinkingModel = source.optString("deepThinkingModel", current.deepThinkingModel),
-        visionBaseUrl = source.optString("visionBaseUrl", mainBase),
-        visionApiKey = source.optString("visionApiKey", mainKey),
-        visionModel = source.optString("visionModel", current.visionModel.ifBlank { mainModel }),
+        // 识图三项"空即继承主模型"统一由 ModelFallback 在请求时解析，导入时不再抄主模型的值（掩码值也不落库）。
+        visionBaseUrl = source.optString("visionBaseUrl", current.visionBaseUrl).orEmpty().trim(),
+        visionApiKey = source.optString("visionApiKey", current.visionApiKey).orEmpty()
+            .takeUnless { isMaskedApiKey(it) }?.trim().orEmpty(),
+        visionModel = source.optString("visionModel", current.visionModel).orEmpty().trim(),
         mentorPrompt = source.optString("mentorPrompt", current.mentorPrompt),
         worldBook = source.optString("worldBook", current.worldBook)
     )
@@ -613,6 +631,9 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
     var pendingRootMode by remember { mutableStateOf<RootMode?>(null) }
     var showRecovery by remember { mutableStateOf(false) }
     var configNotice by remember { mutableStateOf("") }
+    // 任务页共享实例与提示：删除会话时要在这里记录取消/暂停结果，因此提前声明。
+    val automationManager = remember { AutomationManager(context) }
+    var taskNotice by remember { mutableStateOf("") }
     var speechNotice by remember { mutableStateOf("") }
     var autoSendSpeech by remember { mutableStateOf(false) }
     var pendingSpeechExecution by remember { mutableStateOf<String?>(null) }
@@ -781,7 +802,33 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
         workspaceFilesNotice = "已解除目录绑定，磁盘文件未改动"
     }
 
+    /**
+     * 删除会话：先取消仍属于该会话的后台设备动作与自动化，再删会话数据。
+     * 无障碍服务本身继续服务其它会话，这里只按 owner 取消本会话的任务。
+     */
     fun deleteConversation(id: String) {
+        // blockFutureRuns：仍在排队锁上的任务一旦启动就按取消收敛，会话删掉后不允许它再驱动无障碍。
+        val cancelledTasks = runCatching {
+            DeviceTaskCoordinator.cancel(DeviceTaskCoordinator.conversationOwner(id), blockFutureRuns = true)
+        }.getOrDefault(emptyList())
+        val pausedRules = runCatching { automationManager.pauseByConversation(id) }.getOrDefault(emptyList())
+        pausedRules.forEach { rule ->
+            runCatching { AutomationWorker.cancel(context, rule.id) }
+            runCatching {
+                DeviceTaskCoordinator.cancel(AutomationWorker.ownerKey(rule.id), AutomationManager.PAUSED_BY_CONVERSATION_DELETE)
+            }
+        }
+        val cancelNotice = buildString {
+            if (cancelledTasks.isNotEmpty()) {
+                append(DeviceTaskCoordinator.CANCELLED_BY_CONVERSATION_DELETE)
+                append("，已停止 ${cancelledTasks.size} 个进行中的设备操作")
+            }
+            if (pausedRules.isNotEmpty()) {
+                if (isNotEmpty()) append("；")
+                append("已暂停 ${pausedRules.size} 条依赖该会话的自动化规则")
+            }
+        }
+        if (cancelNotice.isNotEmpty()) taskNotice = cancelNotice
         val remaining = conversations.filterNot { it.id == id }
         val next = remaining.ifEmpty { listOf(ChatSession(workspace = workspaceName)) }
         conversations = next
@@ -930,7 +977,7 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
         editingMessageId = null
         val ruleDraft = AutomationManager.parse(clean)
         if (ruleDraft != null) {
-            val rule = AutomationManager(context).create(ruleDraft)
+            val rule = AutomationManager(context).create(ruleDraft, sessionId)
             val extra = if (rule.kind == AutomationKind.PIXIV_NEW_WORK && rule.artist.isBlank())
                 "请到“任务”里补上画师名称或 ID。" else "请到“任务”里检查规则并手动启用。"
             val latest = conversations.firstOrNull { it.id == sessionId } ?: return
@@ -1072,10 +1119,8 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
     }
 
     // ── 任务页状态：由外壳持有，主题屏只读（主题不再自己 new AutomationManager 读授权态）───────
-    val automationManager = remember { AutomationManager(context) }
     var taskRules by remember { mutableStateOf(automationManager.list()) }
     var taskEvents by remember { mutableStateOf(automationManager.recentEvents()) }
-    var taskNotice by remember { mutableStateOf("") }
     var taskEditingRuleId by remember { mutableStateOf<String?>(null) }
     var taskArtistDraft by remember { mutableStateOf("") }
     var taskReplyDraft by remember { mutableStateOf("") }
@@ -1324,11 +1369,28 @@ private fun JarvisApp(quickTaskRequests: Flow<String>, floatingActions: Flow<Flo
                     applyNotice = "配置已保存；应用失败：${error.message ?: "请检查 Gateway 状态"}"
                 }
             if (verify) {
-                val check = withContext(Dispatchers.IO) {
-                    ModelConnectionChecker.test(snapshot.modelBaseUrl, snapshot.modelApiKey, snapshot.modelName)
+                val mainTarget = ModelTarget(snapshot.modelName, snapshot.modelBaseUrl, snapshot.modelApiKey)
+                val mainChoice = ModelFallback.main(snapshot.modelName, snapshot.modelBaseUrl, snapshot.modelApiKey)
+                val visionChoice = ModelFallback.vision(
+                    mainTarget,
+                    ModelTarget(snapshot.visionModel, snapshot.visionBaseUrl, snapshot.visionApiKey)
+                )
+                val check = when (mainChoice) {
+                    // 主模型为空时直接报错，不发出 model 名为空的验证请求。
+                    is ModelChoice.Unavailable -> ModelConnectionResult(false, mainChoice.error)
+                    is ModelChoice.Ready -> withContext(Dispatchers.IO) {
+                        ModelConnectionChecker.test(
+                            mainChoice.target.baseUrl, mainChoice.target.apiKey, mainChoice.target.model
+                        )
+                    }
                 }
                 if (!check.ok) applyFailed = true
-                applyNotice = applyNotice + " 模型验证：${check.message}"
+                val visionLine = when (visionChoice) {
+                    is ModelChoice.Ready -> " 识图模型：${ModelFallback.describe(visionChoice)}"
+                    is ModelChoice.Unavailable ->
+                        if (mainChoice is ModelChoice.Ready) " 识图模型：${visionChoice.error}" else ""
+                }
+                applyNotice = applyNotice + " 模型验证：${check.message}" + visionLine
             }
             bootstrapReport = withContext(Dispatchers.IO) { bootstrap.bootstrap() }
             applying = false
@@ -1903,7 +1965,9 @@ private suspend fun callJarvisModel(
     conversationId: String,
     history: List<ChatMessage>
 ): String = withContext(Dispatchers.IO) {
-    DeviceTaskCoordinator.run("本机对话") {
+    // 归属到具体会话：删除该会话时能精确取消这次在跑的动作，其它会话不受影响。
+    val owner = DeviceTaskCoordinator.conversationOwner(conversationId)
+    val reply = DeviceTaskCoordinator.run("本机对话", owner) {
     val prompt = history.lastOrNull { it.role == ChatMessageRole.USER }?.content.orEmpty()
     val operationMemory = com.jarvis.app.runtime.OperationMemory.at(context.filesDir)
     val memoryStatus = runCatching { operationMemory.begin(prompt); operationMemory.summary() }
@@ -1952,6 +2016,8 @@ private suspend fun callJarvisModel(
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer ${gateway.token()}")
         }
+        // 删除会话要能立刻断开这条阻塞请求；断不开时残留的工具调用由协调器闸门拒绝。
+        DeviceTaskCoordinator.registerCancelHook(owner) { runCatching { connection.disconnect() } }
         try {
             OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(request.toString()) }
             val status = connection.responseCode
@@ -1966,6 +2032,8 @@ private suspend fun callJarvisModel(
         }
     }.getOrElse { "OpenClaw 请求失败：${it.message ?: it.javaClass.simpleName}" }
     }
+    // 会话在等待期间被删除：返回取消结果，调用方不会把这次动作当成完成。
+    DeviceTaskCoordinator.cancelledReasonFor(owner) ?: reply
 }
 
 @Composable
